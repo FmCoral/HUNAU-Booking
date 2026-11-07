@@ -1,0 +1,200 @@
+name: Release Book & Deploy R2
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+*'
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.47.7"
+
+jobs:
+  build-and-deploy:
+    name: Build Release APKs & Deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /opt/hostedtoolcache
+          df -h
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up and validate Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Configure Android Signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > android/app/upload-keystore.jks
+            cat <<EOF > android/key.properties
+          storePassword=$STORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=upload-keystore.jks
+          EOF
+            echo "Android signing configuration generated."
+          else
+            echo "::warning::KEYSTORE_BASE64 secret not found. APK will be built without custom release signing."
+          fi
+
+      - name: Verify dependency manifests
+        run: |
+          test -f pubspec.yaml
+          test -f pubspec.lock
+
+      - name: Install locked dependencies
+        run: |
+          flutter pub get --enforce-lockfile
+          git diff --exit-code -- pubspec.lock
+
+      - name: Build Universal Release APK (Fat)
+        run: |
+          mkdir -p dist
+          ok=0
+          for attempt in 1 2 3; do
+            echo "Universal APK build attempt $attempt"
+            if flutter build apk --release --no-pub \
+              --obfuscate --split-debug-info=build/symbols; then
+              ok=1
+              break
+            fi
+            echo "::warning::Universal APK attempt $attempt failed, retrying in 20s"
+            sleep 20
+          done
+          test "$ok" = "1"
+          cp build/app/outputs/flutter-apk/app-release.apk dist/app-universal-release.apk
+          echo "Successfully built true Universal APK (app-universal-release.apk)"
+
+      - name: Build Split Release APKs
+        run: |
+          ok=0
+          for attempt in 1 2 3; do
+            echo "Split APK build attempt $attempt"
+            if flutter build apk --release --no-pub --split-per-abi \
+              --obfuscate --split-debug-info=build/symbols; then
+              ok=1
+              break
+            fi
+            echo "::warning::Split APK attempt $attempt failed, retrying in 20s"
+            sleep 20
+          done
+          test "$ok" = "1"
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk dist/
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk dist/
+          cp build/app/outputs/flutter-apk/app-x86_64-release.apk dist/
+          echo "Successfully built Split ABI APKs (arm64, armv7, x86_64)"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/app-universal-release.apk
+            dist/app-arm64-v8a-release.apk
+            dist/app-armeabi-v7a-release.apk
+            dist/app-x86_64-release.apk
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 从 tag / pubspec 提取版本号，生成 version.json 供应用内检查更新消费
+      - name: Generate version.json
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          # tag 触发用 tag 名；手动触发时从 pubspec.yaml 读取版本号
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            VERSION="${RELEASE_TAG#v}"
+          else
+            VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1)
+          fi
+          NOTES=$(git log -1 --pretty=%B | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().strip()))')
+          if [ -z "$NOTES" ] || [ "$NOTES" = '""' ]; then NOTES='"例行更新"'; fi
+          printf '{"version": "%s", "notes": %s}\n' "$VERSION" "$NOTES" > dist/version.json
+          cat dist/version.json
+
+      # R2 是正式发布的必要目标；凭据缺失或上传失败时应让发布失败，不能静默跳过。
+      # 上传时将体积更小的 arm64-v8a 命名为 app-release.apk，供应用内更新使用
+      - name: Upload to Cloudflare R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: |
+          aws s3 cp dist/app-arm64-v8a-release.apk \
+            s3://${R2_BUCKET_NAME}/latest/app-release.apk \
+            --endpoint-url https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com \
+            --cache-control "public, max-age=300, s-maxage=300"
+          aws s3 cp dist/version.json \
+            s3://${R2_BUCKET_NAME}/latest/version.json \
+            --endpoint-url https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com \
+            --content-type "application/json" \
+            --cache-control "public, max-age=60, s-maxage=60"
+          echo "Successfully uploaded app-release.apk and version.json to Cloudflare R2"
+
+      # CDN 清缓存是可选步骤。先判断 Secrets 是否配置，避免静默跳过。
+      - name: Check CDN purge configuration
+        id: cdn_purge_config
+        env:
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          if [ -n "$CF_ZONE_ID" ] && [ -n "$CF_API_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::CF_ZONE_ID or CF_API_TOKEN is not configured; skipping CDN cache purge."
+          fi
+
+      - name: Purge Cloudflare CDN Cache
+        if: steps.cdn_purge_config.outputs.enabled == 'true'
+        env:
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          PURGE_RES=$(curl --fail-with-body -sS -X POST \
+            "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{"files":["https://apk.book.hunau.fmcoral.com/latest/app-release.apk","https://apk.book.hunau.fmcoral.com/latest/version.json"]}')
+          echo "Cloudflare Purge Cache Response: $PURGE_RES"
+          python3 -c 'import json,sys; data=json.load(sys.stdin); sys.exit(0 if data.get("success") is True else 1)' <<< "$PURGE_RES"
