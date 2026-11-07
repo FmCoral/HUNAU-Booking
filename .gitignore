@@ -51,3 +51,7 @@ secrets.json
 *.log
 *.tmp
 *.bak
+
+# ---------- 本地开发笔记（保留在本地，不提交）----------
+docs/MEMORY.md
+docs/进度.md

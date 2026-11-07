@@ -108,8 +108,8 @@ flowchart TD
 | --- | --- |
 | [开发方案](docs/开发方案.md) | 用户流程、界面设计、架构、模块、算法、接口、计划与风险 |
 | [发布与更新](docs/发布与更新.md) | apk.book.hunau.fmcoral.com、R2 桶、version.json、自动发布 |
-| [项目记忆](docs/MEMORY.md) | 跨对话交接：已确认规则、技术决策、环境与待办 |
-| [开发进度](docs/进度.md) | 当前阶段、模块状态、里程碑与阻塞 |
+
+> 个人记忆与进度记录仅保留在本地，已在 `.gitignore` 中排除。
 
 ## 8. 项目状态
 
@@ -140,8 +140,6 @@ HUNAU-Booking/
 ├── assets/
 │   └── branding/                  1024 / 512 圆角图标
 ├── docs/
-│   ├── MEMORY.md                  跨对话交接记忆
-│   ├── 进度.md                    开发进度与里程碑
 │   ├── 开发方案.md                需求、界面、架构、接口
 │   └── 发布与更新.md              域名、R2、version.json、CI
 ├── lib/
@@ -157,6 +155,6 @@ HUNAU-Booking/
 └── pubspec.yaml
 ```
 
-## 11. 交接记忆
+## 11. 本地笔记
 
-重开对话时先读 [项目记忆](docs/MEMORY.md)，其中记录了已确认规则、技术决策、待办与待确认项。
+`docs/MEMORY.md` 与 `docs/进度.md` 属于本地开发笔记，不随仓库分发，已在 `.gitignore` 中忽略。重开对话时在本地读取即可。
