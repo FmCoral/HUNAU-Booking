@@ -48,11 +48,12 @@ class UpdateService {
         if (_isNewerVersion(latestVersion, currentVersion)) {
           if (!context.mounted) return;
 
-          ScaffoldMessenger.of(context).showSnackBar(
+          final messenger = ScaffoldMessenger.of(context);
+          messenger.showSnackBar(
             SnackBar(
               content: Text('🚀 发现新版本 v$latestVersion，点击查看详情'),
               behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 10),
+              duration: const Duration(seconds: 5),
               action: SnackBarAction(
                 label: '查看',
                 onPressed: () => Navigator.push(
@@ -67,6 +68,11 @@ class UpdateService {
                 ),
               ),
             ),
+          );
+          // 无障碍导航（读屏开启/关闭动画）时 SnackBar 不会自动消失，兜底 5 秒后关闭
+          Future<void>.delayed(
+            const Duration(seconds: 5),
+            () => messenger.hideCurrentSnackBar(),
           );
 
           if (showNoUpdate) {

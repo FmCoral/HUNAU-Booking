@@ -37,6 +37,8 @@ class _BookAppState extends State<BookApp> {
         title: AppConstants.appName,
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light(),
+        darkTheme: AppTheme.dark(),
+        themeMode: ThemeMode.system,
         home: const _AuthGate(),
       ),
     );
