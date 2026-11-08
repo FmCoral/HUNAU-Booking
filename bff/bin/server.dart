@@ -34,6 +34,29 @@ class _Session {
   })  : createdAt = DateTime.now(),
         lastAccessed = DateTime.now() {
     _flattenCookies();
+    uid = _findChaoxingUid(result.cookies);
+  }
+
+  /// 超星账号 uid，用于拼接头像地址
+  String? uid;
+
+  String? get avatarUrl =>
+      uid == null ? null : 'https://photo.chaoxing.com/p/${uid}_480';
+
+  static String? _findChaoxingUid(Map<Uri, List<Cookie>> cookies) {
+    String? fallback;
+    for (final entry in cookies.entries) {
+      final host = entry.key.host;
+      if (!host.endsWith('chaoxing.com')) continue;
+      for (final cookie in entry.value) {
+        if (cookie.name != 'UID' && cookie.name != '_uid') continue;
+        final value = cookie.value.trim();
+        if (value.isEmpty) continue;
+        if (host.startsWith('passport2.')) return value;
+        fallback ??= value;
+      }
+    }
+    return fallback;
   }
 
   void _flattenCookies() {
@@ -468,6 +491,8 @@ Router _createRouter() {
             ? {
                 'realName': result.profile!.realName,
                 'username': result.profile!.username,
+                'uid': session.uid,
+                'avatarUrl': session.avatarUrl,
               }
             : null,
       });
@@ -499,6 +524,8 @@ Router _createRouter() {
           ? {
               'realName': profile.realName,
               'username': profile.username,
+              'uid': session.uid,
+              'avatarUrl': session.avatarUrl,
             }
           : null,
     });

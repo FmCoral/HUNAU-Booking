@@ -21,7 +21,12 @@ class ProfileScreen extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.page),
         child: Column(
           children: [
-            _buildUserInfo(context, user?.displayName ?? '', user?.username ?? ''),
+            _buildUserInfo(
+              context,
+              user?.displayName ?? '',
+              user?.username ?? '',
+              user?.avatarUrl,
+            ),
 
             const SizedBox(height: AppSpacing.xxl),
 
@@ -98,10 +103,35 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildAvatar(BuildContext context, String? avatarUrl) {
+    final c = context.colors;
+    final fallback = ColoredBox(
+      color: c.surfaceSubtle,
+      child: Icon(Icons.person_rounded, size: 36, color: c.textMuted),
+    );
+
+    return ClipOval(
+      child: SizedBox(
+        width: 72,
+        height: 72,
+        child: avatarUrl == null || avatarUrl.isEmpty
+            ? fallback
+            : Image.network(
+                avatarUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => fallback,
+                loadingBuilder: (context, child, progress) =>
+                    progress == null ? child : fallback,
+              ),
+      ),
+    );
+  }
+
   Widget _buildUserInfo(
     BuildContext context,
     String displayName,
     String username,
+    String? avatarUrl,
   ) {
     final c = context.colors;
 
@@ -115,15 +145,7 @@ class ProfileScreen extends StatelessWidget {
       width: double.infinity,
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 36,
-            backgroundColor: c.surfaceSubtle,
-            child: Icon(
-              Icons.person_rounded,
-              size: 36,
-              color: c.textMuted,
-            ),
-          ),
+          _buildAvatar(context, avatarUrl),
           const SizedBox(width: AppSpacing.lg),
           Expanded(
             child: Column(

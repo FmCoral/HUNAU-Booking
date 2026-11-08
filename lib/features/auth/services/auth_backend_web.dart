@@ -84,9 +84,13 @@ class BffAuthService {
     if (profile is Map) {
       final username = '${profile['username'] ?? ''}'.trim();
       final realName = '${profile['realName'] ?? ''}'.trim();
+      final uid = '${profile['uid'] ?? ''}'.trim();
+      final avatarUrl = '${profile['avatarUrl'] ?? ''}'.trim();
       return AuthProfile(
         username: username.isEmpty ? fallbackUsername : username,
         realName: realName.isEmpty ? null : realName,
+        uid: uid.isEmpty ? null : uid,
+        avatarUrl: avatarUrl.isEmpty ? null : avatarUrl,
       );
     }
     final username = '${body['username'] ?? ''}'.trim();
