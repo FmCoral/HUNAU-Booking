@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/services/update_service.dart';
 import '../../core/theme/app_tokens.dart';
-import '../home/home_screen.dart';
 import '../profile/profile_screen.dart';
+import '../timetable/screens/timetable_screen.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -40,7 +40,7 @@ class _MainShellState extends State<MainShell> {
     return Scaffold(
       body: IndexedStack(
         index: _index,
-        children: const [HomeScreen(), ProfileScreen()],
+        children: const [TimetableScreen(), ProfileScreen()],
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
@@ -54,9 +54,9 @@ class _MainShellState extends State<MainShell> {
             onTap: (index) => setState(() => _index = index),
             items: const [
               BottomNavigationBarItem(
-                icon: Icon(Icons.home_outlined),
-                activeIcon: Icon(Icons.home),
-                label: '首页',
+                icon: Icon(Icons.calendar_month_outlined),
+                activeIcon: Icon(Icons.calendar_month),
+                label: '课表',
               ),
               BottomNavigationBarItem(
                 icon: Icon(Icons.person_outline),

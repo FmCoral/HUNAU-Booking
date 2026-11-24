@@ -1,5 +1,8 @@
 allprojects {
     repositories {
+        // 国内镜像优先，避免直连 Google Maven 卡住
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        maven { url = uri("https://maven.aliyun.com/repository/public") }
         google()
         mavenCentral()
     }

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import '../../../core/constants/app_constants.dart';
+import '../../../core/network/auth_cookies.dart';
 import '../models/auth_profile.dart';
 import 'http_login_service.dart';
 
@@ -8,6 +9,7 @@ import 'http_login_service.dart';
 class NativeLoginService {
   Future<AuthProfile> login(String username, String password) async {
     final result = await HttpLoginService().login(username, password);
+    AuthCookies.save(result.cookies);
     final profile = result.profile;
     final uid = _findChaoxingUid(result.cookies);
     return AuthProfile(
