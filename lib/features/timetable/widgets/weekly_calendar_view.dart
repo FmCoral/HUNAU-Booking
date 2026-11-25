@@ -151,26 +151,22 @@ class WeeklyCalendarViewState extends State<WeeklyCalendarView> {
         const double sectionHeight = 100.0;
         const double targetGap = 4.0;
         const int totalBigSections = 6;
-        final double totalHeight =
-            totalBigSections * (sectionHeight + targetGap) + 40.0;
+        final double gridHeight =
+            totalBigSections * (sectionHeight + targetGap);
 
-        return SingleChildScrollView(
-          scrollDirection: Axis.vertical,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              minWidth: screenWidth,
-              minHeight: totalHeight,
-            ),
-            child: Container(
-              color: context.colors.surface,
-              child: Column(
-                children: [
-                  // 星期标题行
-                  _buildWeekdayHeader(screenWidth, weekMonday),
+        return Column(
+          children: [
+            // 星期标题行固定在顶部，不随课程网格滚动
+            _buildWeekdayHeader(screenWidth, weekMonday),
 
-                  // 时间轴和课程
-                  SizedBox(
-                    height: totalHeight - 40,
+            // 仅课程网格可纵向滚动
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.vertical,
+                child: Container(
+                  color: context.colors.surface,
+                  child: SizedBox(
+                    height: gridHeight,
                     width: screenWidth,
                     child: Stack(
                       children: [
@@ -184,10 +180,10 @@ class WeeklyCalendarViewState extends State<WeeklyCalendarView> {
                       ],
                     ),
                   ),
-                ],
+                ),
               ),
             ),
-          ),
+          ],
         );
       },
     );

@@ -106,44 +106,46 @@ class _TimetableScreenState extends State<TimetableScreen> {
     final hasTimetable = _courses.isNotEmpty && _firstWeekMonday != null;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('课表')),
-      body: Column(
-        children: [
-          if (_syncing) ...[
-            LinearProgressIndicator(
-              minHeight: 2,
-              backgroundColor: colors.border,
-              valueColor: AlwaysStoppedAnimation<Color>(colors.brand),
-            ),
-            Container(
-              width: double.infinity,
-              color: colors.surface,
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.page,
-                vertical: AppSpacing.sm,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            if (_syncing) ...[
+              LinearProgressIndicator(
+                minHeight: 2,
+                backgroundColor: colors.border,
+                valueColor: AlwaysStoppedAnimation<Color>(colors.brand),
               ),
-              child: Text(
-                _progress.isEmpty ? '正在同步课表...' : _progress,
-                style: AppText.caption.copyWith(color: colors.textMuted),
+              Container(
+                width: double.infinity,
+                color: colors.surface,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.page,
+                  vertical: AppSpacing.sm,
+                ),
+                child: Text(
+                  _progress.isEmpty ? '正在同步课表...' : _progress,
+                  style: AppText.caption.copyWith(color: colors.textMuted),
+                ),
               ),
+            ],
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : hasTimetable
+                      ? WeeklyCalendarView(
+                          courses: _courses,
+                          firstWeekMonday: _firstWeekMonday!,
+                          showEndTime: false,
+                        )
+                      : EmptyTimetableState(
+                          isSyncing: _syncing,
+                          onRetry:
+                              _syncFailed && !_syncing ? () => _sync() : null,
+                        ),
             ),
           ],
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : hasTimetable
-                    ? WeeklyCalendarView(
-                        courses: _courses,
-                        firstWeekMonday: _firstWeekMonday!,
-                        showEndTime: false,
-                      )
-                    : EmptyTimetableState(
-                        isSyncing: _syncing,
-                        onRetry:
-                            _syncFailed && !_syncing ? () => _sync() : null,
-                      ),
-          ),
-        ],
+        ),
       ),
     );
   }
