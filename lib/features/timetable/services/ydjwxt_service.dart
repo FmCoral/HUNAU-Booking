@@ -101,7 +101,7 @@ class YdjwxtService {
 
       // 1. 获取 Token
       onProgress('正在进行身份验证...');
-      _token = await _authService.getToken(context: context);
+      _token = await _authService.getToken();
 
       // 2. 预检：确定第一周周一（预检的第 1 周结果直接复用）
       DateTime? calculatedFirstWeekMonday = firstWeekMonday;
@@ -235,10 +235,7 @@ class YdjwxtService {
 
         if (status == 401 && attempt < _maxFetchAttempts) {
           _logger.w('🔑 Token expired while fetching week $week, refreshing...');
-          _token = await _authService.getToken(
-            forceRefresh: true,
-            context: context,
-          );
+          _token = await _authService.getToken(forceRefresh: true);
           continue;
         }
 

@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' as io;
 
-import 'package:flutter/material.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import '../../features/auth/services/http_login_service.dart';
 import '../constants/app_constants.dart';
@@ -12,8 +12,8 @@ import '../utils/app_logger.dart';
 
 /// 移动教务系统（YDJWXT）Token 获取服务。
 ///
-/// 复用登录阶段拿到的 Cookie，通过一个 1x1 的 WebView 完成超星 OAuth，
-/// 再从 localStorage / sessionStorage 中提取 Token。
+/// 复用登录阶段拿到的 Cookie，通过 Headless WebView 完成超星 OAuth，
+/// 并在页面请求头 / localStorage 中提取 Token。
 class YdjwxtAuthService {
   static final YdjwxtAuthService _instance = YdjwxtAuthService._internal();
   factory YdjwxtAuthService() => _instance;
@@ -25,10 +25,19 @@ class YdjwxtAuthService {
   Future<String>? _ongoingAuthFuture;
   int _tokenGeneration = 0;
 
+  /// 需要注入 Cookie 的目标站点。
+  static const List<String> _cookieTargets = [
+    'https://auth.chaoxing.com',
+    'https://passport2.chaoxing.com',
+    'https://passport2-api.chaoxing.com',
+    'https://notice.chaoxing.com',
+    'https://sso.hunau.edu.cn',
+    'https://portal.hunau.edu.cn',
+    'https://ydjwxt.hunau.edu.cn',
+  ];
+
   /// 获取移动教务系统的 Token（支持缓存与自动刷新）。
-  ///
-  /// [context] 用于展示「正在验证身份」的进度弹窗，同步入口必须传入。
-  Future<String> getToken({bool forceRefresh = false, BuildContext? context}) async {
+  Future<String> getToken({bool forceRefresh = false}) async {
     if (!forceRefresh && _cachedToken != null && _isTokenValid(_cachedToken!)) {
       _logger.d('🔑 Using cached YDJWXT token');
       return _cachedToken!;
@@ -40,8 +49,7 @@ class YdjwxtAuthService {
       return await _ongoingAuthFuture!;
     }
 
-    _ongoingAuthFuture =
-        _performAuth(forceRefresh: forceRefresh, context: context);
+    _ongoingAuthFuture = _performAuth(forceRefresh: forceRefresh);
     try {
       return await _ongoingAuthFuture!;
     } finally {
@@ -57,13 +65,10 @@ class YdjwxtAuthService {
     _ongoingAuthFuture = null;
   }
 
-  Future<String> _performAuth({
-    bool forceRefresh = false,
-    BuildContext? context,
-  }) async {
+  Future<String> _performAuth({bool forceRefresh = false}) async {
     final gen = _tokenGeneration;
     _logger.i('🔑 Acquiring YDJWXT token (forceRefresh: $forceRefresh)...');
-    final token = await _authenticate(context);
+    final token = await _authenticate();
     if (token == null || token.isEmpty) {
       throw Exception('身份验证失败，未能获取移动教务系统 Token。请确保已登录。');
     }
@@ -129,27 +134,38 @@ class YdjwxtAuthService {
     }
   }
 
+  /// Cookie 是否适用于目标站点。
+  bool _cookieMatches(io.Cookie cookie, Uri origin, Uri target) {
+    final domain = cookie.domain;
+    if (domain != null && domain.isNotEmpty) {
+      final d = domain.startsWith('.') ? domain.substring(1) : domain;
+      return target.host == d || target.host.endsWith('.$d');
+    }
+    return origin.host == target.host;
+  }
+
   /// 把登录 Cookie 注入 WebView 的 Cookie 管理器。
   Future<void> _injectCookies() async {
-    final manager = WebViewCookieManager();
-    final injected = <String>{};
-    for (final entry in AuthCookies.all.entries) {
-      for (final cookie in entry.value) {
-        final domain =
-            (cookie.domain != null && cookie.domain!.isNotEmpty)
-                ? cookie.domain!
-                : entry.key.host;
-        final path = cookie.path ?? '/';
-        final key = '$domain|$path|${cookie.name}';
-        if (!injected.add(key)) continue;
+    final manager = CookieManager();
+    for (final target in _cookieTargets) {
+      final uri = Uri.parse(target);
+      // 同名 Cookie 以最后写入的为准，避免重复注入。
+      final byName = <String, io.Cookie>{};
+      for (final entry in AuthCookies.all.entries) {
+        for (final cookie in entry.value) {
+          if (!_cookieMatches(cookie, entry.key, uri)) continue;
+          byName[cookie.name] = cookie;
+        }
+      }
+      for (final cookie in byName.values) {
         try {
           await manager.setCookie(
-            WebViewCookie(
-              name: cookie.name,
-              value: cookie.value,
-              domain: domain,
-              path: path,
-            ),
+            url: WebUri(target),
+            name: cookie.name,
+            value: cookie.value,
+            domain: cookie.domain,
+            path: cookie.path ?? '/',
+            isSecure: uri.scheme == 'https',
           );
         } catch (e) {
           _logger.w('⚠️ Failed to inject cookie ${cookie.name}: $e');
@@ -158,85 +174,63 @@ class YdjwxtAuthService {
     }
   }
 
-  /// 通过 WebView 完成超星 OAuth 认证并提取 Token。
-  Future<String?> _authenticate(BuildContext? context) async {
+  /// 通过 Headless WebView 完成超星 OAuth 认证并提取 Token。
+  Future<String?> _authenticate() async {
     // Cookie 不可用属于「登录失效」，需要直接抛给调用方。
     await _ensureCookies();
     await _injectCookies();
 
     final completer = Completer<String?>();
-    final controller = WebViewController();
-    controller.setJavaScriptMode(JavaScriptMode.unrestricted);
-    controller.setUserAgent(AppConstants.ydjwxtUA);
-    controller.setNavigationDelegate(
-      NavigationDelegate(
-        onPageFinished: (url) async {
-          try {
-            final raw = await controller.runJavaScriptReturningResult(
-              "localStorage.getItem('token') || "
-              "sessionStorage.getItem('token') || "
-              "localStorage.getItem('access_token') || ''",
-            );
-            final token = raw.toString().replaceAll('"', '').trim();
+    final controller = HeadlessInAppWebView(
+      initialUrlRequest: URLRequest(url: WebUri(AppConstants.ydjwxtOAuthUrl)),
+      initialSettings: InAppWebViewSettings(
+        javaScriptEnabled: true,
+        domStorageEnabled: true,
+        userAgent: AppConstants.ydjwxtUA,
+        useShouldInterceptRequest: true,
+        cacheEnabled: false,
+        cacheMode: CacheMode.LOAD_NO_CACHE,
+        clearSessionCache: true,
+      ),
+      onLoadStop: (controller, url) async {
+        try {
+          final raw = await controller.evaluateJavascript(source: '''
+            (function() {
+              return localStorage.getItem('token') ||
+                     sessionStorage.getItem('token') ||
+                     localStorage.getItem('access_token') || '';
+            })()
+          ''');
+          final token = (raw ?? '').toString().replaceAll('"', '').trim();
+          if (token.length > 20 && !completer.isCompleted) {
+            _logger.i('✅ Token captured from storage at $url');
+            completer.complete(token);
+          }
+        } catch (e) {
+          _logger.d('⚠️ Read token from WebView failed: $e');
+        }
+      },
+      shouldInterceptRequest: (controller, request) async {
+        final headers = request.headers;
+        if (headers != null) {
+          for (final key in const ['token', 'Token', 'authorization', 'Authorization']) {
+            final raw = headers[key];
+            if (raw == null || raw.isEmpty || raw.length <= 20) continue;
+            if (raw.startsWith('Basic')) break;
+            final token =
+                raw.startsWith('Bearer ') ? raw.substring(7) : raw;
             if (token.length > 20 && !completer.isCompleted) {
+              _logger.i('✅ Token captured from request header');
               completer.complete(token);
             }
-          } catch (e) {
-            _logger.d('⚠️ Read token from WebView failed: $e');
+            break;
           }
-        },
-      ),
+        }
+        return null;
+      },
     );
-    controller.loadRequest(Uri.parse(AppConstants.ydjwxtOAuthUrl));
 
-    NavigatorState? navigator;
-    var dialogClosed = false;
-    if (context != null && context.mounted) {
-      navigator = Navigator.of(context, rootNavigator: true);
-      unawaited(
-        showDialog<void>(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => PopScope(
-            canPop: false,
-            child: AlertDialog(
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    children: [
-                      SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      SizedBox(width: 14),
-                      Expanded(child: Text('正在验证教务身份...')),
-                    ],
-                  ),
-                  // 1x1 的 WebView：仅用于跑 OAuth 与执行 JS，不干扰布局
-                  SizedBox(
-                    width: 1,
-                    height: 1,
-                    child: WebViewWidget(controller: controller),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    void closeDialog() {
-      if (dialogClosed) return;
-      dialogClosed = true;
-      final nav = navigator;
-      if (nav != null && nav.mounted && nav.canPop()) {
-        nav.pop();
-      }
-    }
+    await controller.run();
 
     final timeoutTimer = Timer(const Duration(seconds: 45), () {
       if (!completer.isCompleted) {
@@ -251,7 +245,7 @@ class YdjwxtAuthService {
       rethrow;
     } finally {
       timeoutTimer.cancel();
-      closeDialog();
+      await controller.dispose();
     }
   }
 }
