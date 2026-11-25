@@ -6,6 +6,11 @@ on:
       - '[0-9]+.[0-9]+.[0-9]+*'
       - 'v*'
   workflow_dispatch:
+    inputs:
+      notes:
+        description: '更新说明（留空则使用最近一次提交的正文）'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -121,6 +126,7 @@ jobs:
           echo "Successfully built arm64 Release APK (app-arm64-v8a-release.apk)"
 
       - name: Create GitHub Release
+        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           files: |
@@ -135,6 +141,7 @@ jobs:
       - name: Generate version.json
         env:
           RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_NOTES: ${{ inputs.notes }}
         run: |
           # tag 触发用 tag 名；手动触发时从 pubspec.yaml 读取版本号
           if [ "${{ github.ref_type }}" = "tag" ]; then
@@ -142,7 +149,11 @@ jobs:
           else
             VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1)
           fi
-          NOTES=$(git log -1 --pretty=%B | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().strip()))')
+          if [ -n "$RELEASE_NOTES" ]; then
+            NOTES=$(printf '%s' "$RELEASE_NOTES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().strip()))')
+          else
+            NOTES=$(git log -1 --pretty=%B | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().strip()))')
+          fi
           if [ -z "$NOTES" ] || [ "$NOTES" = '""' ]; then NOTES='"例行更新"'; fi
           printf '{"version": "%s", "notes": %s}\n' "$VERSION" "$NOTES" > dist/version.json
           cat dist/version.json
