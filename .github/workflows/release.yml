@@ -152,7 +152,11 @@ jobs:
           else
             VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1)
           fi
-          if [ -n "$RELEASE_NOTES" ]; then
+          NOTES_FILE="docs/release-notes/${VERSION}.txt"
+          if [ -f "$NOTES_FILE" ]; then
+            # 优先读取仓库内的版本文案，避免更新说明被 commit 标题污染。
+            NOTES=$(python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().strip()))' < "$NOTES_FILE")
+          elif [ -n "$RELEASE_NOTES" ]; then
             NOTES=$(printf '%s' "$RELEASE_NOTES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().strip()))')
           else
             NOTES=$(git log -1 --pretty=%B | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().strip()))')
