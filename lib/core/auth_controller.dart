@@ -5,8 +5,11 @@ import 'package:flutter/foundation.dart';
 import '../features/auth/models/auth_profile.dart';
 import '../features/auth/services/auth_backend.dart';
 import '../features/auth/services/native_login.dart';
+import '../features/timetable/services/timetable_storage.dart';
 import 'exceptions/app_exceptions.dart';
+import 'network/auth_cookies.dart';
 import 'services/auth_store.dart';
+import 'services/ydjwxt_auth_service.dart';
 
 /// 登录态管理：本地保存凭据与资料，重启后先渲染资料再静默重登。
 class AuthController extends ChangeNotifier {
@@ -92,6 +95,10 @@ class AuthController extends ChangeNotifier {
       await _bff.logout();
     }
     await _store.clear();
+    // 清掉与账号绑定的本地数据，避免切换账号后看到上一个人的课表。
+    await TimetableStorage().clear();
+    YdjwxtAuthService().clearToken();
+    AuthCookies.clear();
     _user = null;
     _errorMessage = null;
     notifyListeners();

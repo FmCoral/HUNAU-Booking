@@ -11,10 +11,14 @@ class EmptyTimetableState extends StatelessWidget {
   /// 同步完成后或关闭时退出转圈，显示暂无课表并提示点刷新按钮手动同步。
   final bool isSyncing;
 
+  /// 自动同步失败后的重试回调；为空时不显示按钮。
+  final VoidCallback? onRetry;
+
   const EmptyTimetableState({
     super.key,
     this.autoSyncEnabled = true,
     this.isSyncing = false,
+    this.onRetry,
   });
 
   @override
@@ -48,7 +52,7 @@ class EmptyTimetableState extends StatelessWidget {
             Text(
               showLoading
                   ? context.l10n.timetableSyncing
-                  : context.l10n.noLocalTimetable,
+                  : (onRetry != null ? '同步失败，稍后再试' : context.l10n.noLocalTimetable),
               textAlign: TextAlign.center,
               style: AppText.pageTitle.copyWith(color: colors.text),
             ),
@@ -56,11 +60,23 @@ class EmptyTimetableState extends StatelessWidget {
             Text(
               showLoading
                   ? context.l10n.timetableSyncingDesc
-                  : context.l10n.tapRefreshButtonToSync,
+                  : (onRetry != null
+                      ? '请检查在“智慧湘农-教务系统”能否正常进入'
+                      : context.l10n.tapRefreshButtonToSync),
               textAlign: TextAlign.center,
               style:
                   AppText.bodyDense.copyWith(color: colors.textMuted, height: 1.5),
             ),
+            if (onRetry != null && !showLoading) ...[
+              const SizedBox(height: AppSpacing.xxl),
+              FilledButton(
+                onPressed: onRetry,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(140, 44),
+                ),
+                child: const Text('重新同步'),
+              ),
+            ],
             if (showLoading) ...[
               const SizedBox(height: AppSpacing.xxxl),
               const SizedBox(

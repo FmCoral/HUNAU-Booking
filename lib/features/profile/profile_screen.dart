@@ -5,6 +5,7 @@ import '../../core/auth_scope.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/utils/route_utils.dart';
 import 'screens/about_screen.dart';
+import 'screens/settings_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -44,6 +45,10 @@ class ProfileScreen extends StatelessWidget {
                     context,
                     icon: Icons.settings_outlined,
                     title: '设置',
+                    onTap: () => Navigator.push(
+                      context,
+                      createSlideHorizontalRoute(const SettingsScreen()),
+                    ),
                   ),
                   Divider(height: 1, indent: 56, color: c.border),
                   _buildListTile(

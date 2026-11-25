@@ -10,7 +10,7 @@ class AppL10n {
   const AppL10n();
 
   String get noLocalTimetable => '暂无本地课表';
-  String get tapRefreshButtonToSync => '点击右上角刷新按钮手动同步';
+  String get tapRefreshButtonToSync => '前往「我的 → 设置 → 课表同步」获取课表';
   String get timetableSyncing => '课表正在同步中';
   String get timetableSyncingDesc => '系统正在为您全自动拉取教务课表\n请稍等片刻...';
   String get noTimetableFound => '未获取到课表';

@@ -72,6 +72,23 @@ class TimetableStorage {
     return guess;
   }
 
+  /// 退出登录时清除本地课表，避免切换账号后仍显示上一个账号的数据。
+  ///
+  /// 同时清理同步备份文件，防止下一次同步失败时把旧账号课表还原回来。
+  Future<void> clear() async {
+    final dir = await _directory();
+    for (final name in const [coursesFileName, metaFileName]) {
+      for (final suffix in const ['', '.bak', '.tmp']) {
+        final file = File('${dir.path}/$name$suffix');
+        try {
+          if (await file.exists()) {
+            await file.delete();
+          }
+        } catch (_) {}
+      }
+    }
+  }
+
   Future<void> _atomicWrite(File file, String content) async {
     final tmpFile = File('${file.path}.tmp');
     try {

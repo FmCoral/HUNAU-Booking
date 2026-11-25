@@ -1,14 +1,20 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/auth_scope.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../models/course_model.dart';
+import '../services/timetable_events.dart';
 import '../services/timetable_storage.dart';
 import '../services/ydjwxt_service.dart';
 import '../widgets/empty_timetable_state.dart';
 import '../widgets/weekly_calendar_view.dart';
 
-/// 课表首页：展示周视图课表，右上角刷新按钮手动同步教务课表。
+/// 课表首页：展示周视图课表。
+///
+/// 登录后若本地暂无课表则自动同步一次；同步失败时在空状态提供「重新同步」按钮。
+/// 手动同步入口在「我的 → 设置 → 课表同步」。
 class TimetableScreen extends StatefulWidget {
   const TimetableScreen({super.key});
 
@@ -24,12 +30,30 @@ class _TimetableScreenState extends State<TimetableScreen> {
   DateTime? _firstWeekMonday;
   bool _loading = true;
   bool _syncing = false;
+  bool _syncFailed = false;
   String _progress = '';
 
   @override
   void initState() {
     super.initState();
-    _loadLocal();
+    timetableRevision.addListener(_loadLocal);
+    // 首帧之后再读登录态，initState 里不能查 InheritedWidget。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _bootstrap());
+  }
+
+  @override
+  void dispose() {
+    timetableRevision.removeListener(_loadLocal);
+    super.dispose();
+  }
+
+  Future<void> _bootstrap() async {
+    await _loadLocal();
+    if (!mounted) return;
+    // 仅在新登录且本地无课表时自动同步，避免每次启动都请求教务系统。
+    if (_courses.isEmpty && _firstWeekMonday == null) {
+      unawaited(_sync());
+    }
   }
 
   Future<void> _loadLocal() async {
@@ -44,46 +68,28 @@ class _TimetableScreenState extends State<TimetableScreen> {
   }
 
   Future<void> _sync() async {
-    if (_syncing) return;
-
-    final messenger = ScaffoldMessenger.of(context);
-    if (!AuthScope.of(context).isAuthenticated) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('请先登录')),
-      );
-      return;
-    }
+    if (_syncing || !mounted) return;
+    if (!AuthScope.of(context).isAuthenticated) return;
 
     setState(() {
       _syncing = true;
+      _syncFailed = false;
       _progress = '正在同步课表...';
     });
 
     try {
-      final result = await _service.syncTimetable(
+      await _service.syncTimetable(
         onProgress: (progress) {
           if (!mounted) return;
           setState(() => _progress = progress);
         },
-        firstWeekMonday: _firstWeekMonday,
-        context: context,
       );
-
-      final courses = await _storage.readCourses();
-      final monday = await _storage.readFirstWeekMonday();
+      timetableRevision.value++;
+      await _loadLocal();
+    } catch (_) {
       if (!mounted) return;
-      setState(() {
-        _courses = courses;
-        _firstWeekMonday = monday;
-      });
-      messenger.showSnackBar(
-        SnackBar(content: Text('同步成功，共 ${result.courseCount} 门课程')),
-      );
-    } catch (e) {
-      final message = e.toString().replaceFirst('Exception: ', '');
-      messenger.showSnackBar(
-        SnackBar(content: Text('同步失败：$message')),
-      );
+      // 失败信息由空状态文案承载，不再额外弹 SnackBar 重复提示。
+      setState(() => _syncFailed = true);
     } finally {
       if (mounted) {
         setState(() {
@@ -100,34 +106,15 @@ class _TimetableScreenState extends State<TimetableScreen> {
     final hasTimetable = _courses.isNotEmpty && _firstWeekMonday != null;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('课表'),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: AppSpacing.sm),
-            child: IconButton(
-              tooltip: '同步课表',
-              onPressed: _syncing ? null : _sync,
-              icon: _syncing
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.refresh),
-            ),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('课表')),
       body: Column(
         children: [
-          if (_syncing)
+          if (_syncing) ...[
             LinearProgressIndicator(
               minHeight: 2,
               backgroundColor: colors.border,
               valueColor: AlwaysStoppedAnimation<Color>(colors.brand),
             ),
-          if (_syncing)
             Container(
               width: double.infinity,
               color: colors.surface,
@@ -140,6 +127,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
                 style: AppText.caption.copyWith(color: colors.textMuted),
               ),
             ),
+          ],
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -149,7 +137,11 @@ class _TimetableScreenState extends State<TimetableScreen> {
                         firstWeekMonday: _firstWeekMonday!,
                         showEndTime: false,
                       )
-                    : EmptyTimetableState(isSyncing: _syncing),
+                    : EmptyTimetableState(
+                        isSyncing: _syncing,
+                        onRetry:
+                            _syncFailed && !_syncing ? () => _sync() : null,
+                      ),
           ),
         ],
       ),
