@@ -4,6 +4,7 @@ import '../../core/auth_scope.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/utils/route_utils.dart';
 import 'screens/account_screen.dart';
+import 'screens/campus_card_screen.dart';
 import 'services/campus_card_service.dart';
 
 /// 「我」页：顶部展示校园卡余额，其余留白；
@@ -67,6 +68,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _openCampusCard() async {
+    await Navigator.push(
+      context,
+      createSlideHorizontalRoute(const CampusCardScreen()),
+    );
+    if (mounted) await _refresh();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -113,7 +122,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
       balanceText = '¥${info.balance}';
     } else {
-      subtitle = _error ?? (_loading ? '正在获取余额' : '点击刷新');
+      subtitle = _error ?? (_loading ? '正在获取余额' : '点击查看');
       balanceText = _loading ? '...' : '¥--';
     }
 
@@ -129,7 +138,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         borderRadius: AppRadius.cardAll,
         child: InkWell(
           borderRadius: AppRadius.cardAll,
-          onTap: _refresh,
+          onTap: _openCampusCard,
           child: Padding(
             padding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.lg,

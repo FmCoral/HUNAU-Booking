@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/network/auth_cookies.dart';
+import '../../../core/utils/dkyw_crypto.dart';
 
 /// 校园卡信息（姓名、卡号、余额）。
 class CampusCardInfo {
@@ -32,20 +33,43 @@ class CampusCardInfo {
       );
 }
 
-/// 校园卡余额查询。
+/// 微信充值订单（含微信 H5 支付地址）。
+class WeChatRechargeOrder {
+  const WeChatRechargeOrder({
+    required this.partnerjourno,
+    required this.mwebUrl,
+    required this.returnurl,
+  });
+
+  final String partnerjourno;
+  final String mwebUrl;
+  final String returnurl;
+}
+
+/// 校园卡余额查询与充值。
 ///
 /// 与牛×5 一致的纯 HTTP 链路：
 /// `auth.chaoxing.com` 授权 → 302 → `fin-serv` openHomePage（携带 openid）
 /// → `cardpay/openCardPay` 页面内 `<p class="bdb">姓名：学号 余额：x.xx元</p>`。
 /// 登录得到的 Cookie 从 [AuthCookies] 复用，按域名回放。
+/// 充值接口 `cardpay/openCardPay` 系列需要动态 AES 加解密，见 [DkywCrypto]。
 class CampusCardService {
   CampusCardService._();
 
   static final CampusCardService instance = CampusCardService._();
 
   static const String _storageKey = 'cached_campus_card_info';
+  static const String _finServBase = 'https://fin-serv.hunau.edu.cn';
+  static const String _cardPayPath = '/cardpay/openCardPay';
+  static const String _homePath = '/homeCX/openHomePage';
 
   CampusCardInfo? _cached;
+  CampusCardInfo? get cached => _cached;
+
+  String? _openid;
+  String? get openid => _openid;
+
+  _CardSession? _session;
 
   /// 读取上次成功获取的余额，用于首帧直接展示。
   Future<CampusCardInfo?> loadCached() async {
@@ -68,6 +92,8 @@ class CampusCardService {
   /// 退出登录时清空，避免下一个账号看到上一个人的余额。
   Future<void> clearSession() async {
     _cached = null;
+    _openid = null;
+    _session = null;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_storageKey);
@@ -88,10 +114,12 @@ class CampusCardService {
       throw Exception('校园卡授权失败，请重新登录后再试');
     }
 
+    _session = session;
+    _openid = openid;
+
     final html = (await session.get(
-      'https://fin-serv.hunau.edu.cn/cardpay/openCardPay?openid=$openid&displayflag=1&id=28',
-      referer:
-          'https://fin-serv.hunau.edu.cn/homeCX/openHomePage?openid=$openid&usertype=2',
+      '$_finServBase$_cardPayPath?openid=$openid&displayflag=1&id=28',
+      referer: '$_finServBase$_homePath?openid=$openid&usertype=2',
     ))
         .data ??
         '';
@@ -109,6 +137,200 @@ class CampusCardService {
       // 持久化失败不影响本次展示
     }
     return info;
+  }
+
+  /// 确保充值环境可用：已有会话先预热 openCardPay，否则重新授权。
+  Future<String?> ensureCardPayAuthenticated({bool force = false}) async {
+    if (force || _openid == null || _session == null || _cached == null) {
+      await refresh();
+    }
+
+    final openid = _openid;
+    final session = _session;
+    if (openid == null || session == null) return null;
+
+    try {
+      await session.get(
+        '$_finServBase$_cardPayPath?openid=$openid&displayflag=1&id=28',
+        referer: '$_finServBase$_homePath?openid=$openid&usertype=2',
+      );
+    } catch (_) {
+      // 预热失败不阻断，后续 POST 会带同样 Cookie。
+    }
+    return openid;
+  }
+
+  /// 提交充值请求，获取支付宝跳转表单。
+  Future<String> getAlipayForm(double amount) async {
+    await ensureCardPayAuthenticated();
+    final info = _cached;
+    if (info == null) throw Exception('未获取到校园卡信息');
+
+    final amountStr =
+        amount == amount.roundToDouble() ? amount.toInt().toString() : amount.toStringAsFixed(2);
+
+    try {
+      await _postCardPay(
+        '$_finServBase/myaccount/userlastbind',
+        {
+          'payinfo': {'cardpayWay': '4'},
+          'idserial': info.idserial,
+        },
+      );
+    } catch (_) {
+      // 记录支付方式失败不影响下单
+    }
+
+    final data = await _postCardPay(
+      '$_finServBase/alipay/transferFromAlipay2Card',
+      {
+        'txamt': amountStr,
+        'payWay': '4',
+        'openid': _openid,
+        'idserial': info.idserial,
+      },
+    );
+
+    if (data is Map && (data['success'] == true || data['success'] == 'true')) {
+      final result = data['resultData'];
+      if (result is Map && result['htmlpost'] != null) {
+        return result['htmlpost'].toString();
+      }
+    }
+    if (data is Map) {
+      final msg = data['message'] ?? data['msg'];
+      if (msg != null) throw Exception(msg.toString());
+    }
+    throw Exception('获取支付宝支付表单失败，请稍后重试');
+  }
+
+  /// 提交微信充值请求，获取微信 H5 支付地址。
+  Future<WeChatRechargeOrder> createWeChatOrder(double amount) async {
+    await ensureCardPayAuthenticated();
+    final info = _cached;
+    if (info == null) throw Exception('未获取到校园卡信息');
+
+    final amountStr =
+        amount == amount.roundToDouble() ? amount.toInt().toString() : amount.toStringAsFixed(2);
+
+    try {
+      await _postCardPay(
+        '$_finServBase/myaccount/userlastbind',
+        {
+          'payinfo': {'cardpayWay': '1'},
+          'idserial': info.idserial,
+        },
+      );
+    } catch (_) {
+      // 记录支付方式失败不影响下单
+    }
+
+    final data = await _postCardPay(
+      '$_finServBase/wxpay/transferFromWx2Card',
+      {
+        'txamt': amountStr,
+        'payWay': '1',
+        'openid': _openid,
+        'idserial': info.idserial,
+        'tradetype': 'WAP',
+      },
+    );
+
+    if (data is Map && (data['success'] == true || data['success'] == 'true')) {
+      final result = data['resultData'];
+      if (result is Map && result['mweb_url'] != null) {
+        var returnurl = result['returnurl']?.toString() ?? '';
+        if (returnurl.contains('%')) {
+          try {
+            returnurl = Uri.decodeComponent(returnurl);
+          } catch (_) {}
+        }
+        if (returnurl.startsWith('http://')) {
+          returnurl = returnurl.replaceFirst('http://', 'https://');
+        }
+        return WeChatRechargeOrder(
+          partnerjourno: result['partnerjourno']?.toString() ?? '',
+          mwebUrl: result['mweb_url'].toString(),
+          returnurl: returnurl,
+        );
+      }
+    }
+    if (data is Map) {
+      final msg = data['message'] ?? data['msg'];
+      if (msg != null) throw Exception(msg.toString());
+    }
+    throw Exception('创建微信充值订单失败，请稍后重试');
+  }
+
+  /// 从微信 H5 支付页中提取 `weixin://wap/pay?...` 唤醒链接。
+  Future<String?> getWeChatDeepLink(String mwebUrl) async {
+    final session = _session ?? _CardSession();
+    try {
+      final response = await session.get(
+        mwebUrl,
+        referer: '$_finServBase/',
+        accept:
+            'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      );
+      final html = response.data ?? '';
+      final match =
+          RegExp(r'''(weixin://wap/pay\?[^"'\s<>\)]+)''').firstMatch(html);
+      if (match != null) {
+        return match.group(1)!.replaceAll('&amp;', '&');
+      }
+    } catch (_) {
+      // 提取失败时退回内置 WebView 打开 mweb_url
+    }
+    return null;
+  }
+
+  /// 发送带 DKYW 动态 AES 加解密的充值 POST 请求。
+  Future<dynamic> _postCardPay(
+    String url,
+    Map<String, dynamic> payload, {
+    bool isRetry = false,
+  }) async {
+    if (_openid == null || _session == null) {
+      await ensureCardPayAuthenticated(force: isRetry);
+    }
+    final openid = _openid;
+    final session = _session;
+    if (openid == null || session == null) throw Exception('未授权，请重新登录后再试');
+
+    final response = await session.post(
+      '$url?openid=$openid&connect_redirect=1',
+      data: {'datajson': DkywCrypto.encryptPayload(payload)},
+      referer: '$_finServBase$_cardPayPath?openid=$openid&displayflag=1&id=28',
+    );
+
+    final data = DkywCrypto.decryptServerResponse(response.data);
+
+    if (!isRetry && _looksExpired(data)) {
+      _openid = null;
+      _session = null;
+      await ensureCardPayAuthenticated(force: true);
+      return _postCardPay(url, payload, isRetry: true);
+    }
+
+    return data;
+  }
+
+  bool _looksExpired(dynamic data) {
+    if (data is Map) {
+      final msg = (data['message'] ?? data['msg'] ?? '').toString();
+      return msg.contains('openid无效') ||
+          msg.contains('页面丢失') ||
+          msg.contains('未登录') ||
+          msg.contains('会话过期') ||
+          msg.contains('资源受限');
+    }
+    if (data is String) {
+      return data.contains('cas/login') ||
+          data.contains('errorPage') ||
+          data.contains('资源受限') ||
+          data.contains('页面丢失');
+    }
+    return false;
   }
 
   CampusCardInfo? _parse(String html) {
@@ -132,10 +354,12 @@ class CampusCardService {
     // 兜底：扫描表单域与「余额」文本
     final name = RegExp(r'id="username"\s+value="([^"]+)"')
         .firstMatch(html)
-        ?.group(1);
+        ?.group(1) ??
+        RegExp(r'name="username"\s+value="([^"]+)"').firstMatch(html)?.group(1);
     final idserial = RegExp(r'id="idserial"\s+value="([^"]+)"')
         .firstMatch(html)
-        ?.group(1);
+        ?.group(1) ??
+        RegExp(r'name="idserial"\s+value="([^"]+)"').firstMatch(html)?.group(1);
     final balance = RegExp(r'余额(?:<[^>]*>|[：:\s])*([0-9]+\.[0-9]+)')
             .firstMatch(html)
             ?.group(1) ??
@@ -195,23 +419,7 @@ class _CardSession {
     return values.isEmpty ? null : values.join('; ');
   }
 
-  Future<Response<String>> get(String url, {String? referer}) async {
-    final uri = Uri.parse(url);
-    final cookieHeader = _cookieHeader(uri);
-    final response = await _dio.getUri<String>(
-      uri,
-      options: Options(
-        headers: {
-          'User-Agent': AppConstants.campusCardUA,
-          'Accept':
-              'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'zh-CN,zh;q=0.9',
-          'Referer': ?referer,
-          'Cookie': ?cookieHeader,
-        },
-      ),
-    );
-
+  void _absorbCookies(Response response, Uri uri) {
     final setCookies =
         response.headers[HttpHeaders.setCookieHeader] ?? const <String>[];
     for (final header in setCookies) {
@@ -221,6 +429,55 @@ class _CardSession {
         // 个别 Set-Cookie 格式异常时跳过
       }
     }
+  }
+
+  Future<Response<String>> get(
+    String url, {
+    String? referer,
+    String? accept,
+  }) async {
+    final uri = Uri.parse(url);
+    final cookieHeader = _cookieHeader(uri);
+    final response = await _dio.getUri<String>(
+      uri,
+      options: Options(
+        headers: {
+          'User-Agent': AppConstants.campusCardUA,
+          'Accept': accept ??
+              'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'zh-CN,zh;q=0.9',
+          'Referer': ?referer,
+          'Cookie': ?cookieHeader,
+        },
+      ),
+    );
+    _absorbCookies(response, uri);
+    return response;
+  }
+
+  Future<Response<String>> post(
+    String url, {
+    Object? data,
+    String? referer,
+  }) async {
+    final uri = Uri.parse(url);
+    final cookieHeader = _cookieHeader(uri);
+    final response = await _dio.postUri<String>(
+      uri,
+      data: data,
+      options: Options(
+        contentType: Headers.jsonContentType,
+        headers: {
+          'User-Agent': AppConstants.campusCardUA,
+          'Accept': 'application/json, text/javascript, */*; q=0.01',
+          'Accept-Language': 'zh-CN,zh;q=0.9',
+          'X-Requested-With': 'XMLHttpRequest',
+          'Referer': ?referer,
+          'Cookie': ?cookieHeader,
+        },
+      ),
+    );
+    _absorbCookies(response, uri);
     return response;
   }
 
