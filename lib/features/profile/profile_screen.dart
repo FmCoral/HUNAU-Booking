@@ -18,6 +18,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   CampusCardInfo? _info;
   bool _loading = false;
+  bool _retried = false;
   String? _error;
 
   @override
@@ -52,6 +53,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() {
         _error = error.toString().replaceFirst('Exception: ', '');
       });
+      // 冷启动时静默重登可能还没写完 Cookie，自动补试一次。
+      if (_info == null && !_retried) {
+        _retried = true;
+        Future.delayed(const Duration(seconds: 3), () {
+          if (mounted && !_loading) _refresh();
+        });
+      }
     } finally {
       if (mounted) {
         setState(() => _loading = false);
@@ -92,66 +100,93 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildBalanceCard(BuildContext context) {
     final c = context.colors;
     final info = _info;
-    final balance = info == null ? '--' : '¥ ${info.balance}';
-    final subtitle = info != null
-        ? '${info.name} · ${info.idserial}'
-        : (_error ?? '正在获取校园卡余额');
+    final String balanceText;
+    final String subtitle;
 
-    return Material(
-      color: c.surface,
-      borderRadius: AppRadius.cardAll,
-      child: InkWell(
-        onTap: _refresh,
+    if (info != null) {
+      if (info.name.isNotEmpty && info.idserial.isNotEmpty) {
+        subtitle = '${info.name} · ${info.idserial}';
+      } else if (info.idserial.isNotEmpty) {
+        subtitle = info.idserial;
+      } else {
+        subtitle = '校园卡';
+      }
+      balanceText = '¥${info.balance}';
+    } else {
+      subtitle = _error ?? (_loading ? '正在获取余额' : '点击刷新');
+      balanceText = _loading ? '...' : '¥--';
+    }
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: c.surface,
         borderRadius: AppRadius.cardAll,
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(AppSpacing.card),
-          decoration: BoxDecoration(
-            borderRadius: AppRadius.cardAll,
-            border: Border.all(color: c.border),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '校园卡余额',
-                      style: AppText.caption.copyWith(color: c.textMuted),
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      balance,
-                      style: const TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w700,
-                        height: 32 / 26,
-                        fontFeatures: [FontFeature.tabularFigures()],
-                      ).copyWith(color: c.text),
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppText.caption.copyWith(color: c.textMuted),
-                    ),
-                  ],
+        border: Border.all(color: c.border),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: AppRadius.cardAll,
+        child: InkWell(
+          borderRadius: AppRadius.cardAll,
+          onTap: _refresh,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.lg,
+              vertical: 14,
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.credit_card_outlined,
+                  size: 22,
+                  color: Color(0xFF1677FF),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              _loading
-                  ? SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: c.textMuted,
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '校园卡',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.bodyDense.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: c.text,
+                        ),
                       ),
-                    )
-                  : Icon(Icons.refresh_rounded, size: 20, color: c.textMuted),
-            ],
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.caption.copyWith(color: c.textMuted),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                if (_loading && info != null)
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: c.textMuted,
+                    ),
+                  )
+                else
+                  Text(
+                    balanceText,
+                    style: AppText.keyNumber.copyWith(
+                      fontSize: 17,
+                      color: c.text,
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),

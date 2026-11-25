@@ -224,12 +224,16 @@ class _CardSession {
     return response;
   }
 
-  /// 走超星授权链，返回 openid；落到 errorPage 或超时返回 null。
+  /// 走超星授权链，返回 openid；落到 errorPage、资源受限或超时返回 null。
+  ///
+  /// 与牛×5 一致：即使 Location 里已经带了 openid，也要继续 GET 一次
+  /// `openHomePage`，否则 fin-serv 的会话 Cookie 没建立，
+  /// 后续 openCardPay 会落到 errorPage（表现为刷新失败）。
   Future<String?> authorize() async {
     var url = AppConstants.campusCardUrl;
     String? referer;
 
-    for (var step = 0; step < 10; step++) {
+    for (var step = 0; step < 12; step++) {
       final response = await get(url, referer: referer);
       final status = response.statusCode ?? 0;
       final location =
@@ -238,8 +242,6 @@ class _CardSession {
       if (status >= 300 && status < 400 && location.isNotEmpty) {
         final next = Uri.parse(url).resolve(location).toString();
         if (next.contains('errorPage')) return null;
-        final match = RegExp(r'openid=([A-Za-z0-9]+)').firstMatch(next);
-        if (match != null) return match.group(1);
         referer = url;
         url = next;
         continue;
@@ -247,10 +249,16 @@ class _CardSession {
 
       final body = response.data ?? '';
       if (body.contains('资源受限') || body.contains('页面丢失')) return null;
-      final match =
+
+      final fromBody =
           RegExp(r'openHomePage\?openid=([A-Za-z0-9]+)').firstMatch(body) ??
               RegExp(r'''openid["'=:\s]+([A-Fa-f0-9]{16,})''').firstMatch(body);
-      return match?.group(1);
+      if (fromBody != null) return fromBody.group(1);
+
+      final openid = Uri.parse(url).queryParameters['openid'];
+      if (openid != null && openid.isNotEmpty) return openid;
+
+      return null;
     }
     return null;
   }
