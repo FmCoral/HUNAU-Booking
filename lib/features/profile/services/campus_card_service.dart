@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/network/auth_cookies.dart';
+import '../../../core/utils/app_logger.dart';
 import '../../../core/utils/dkyw_crypto.dart';
 
 /// 校园卡信息（姓名、卡号、余额）。
@@ -58,6 +59,8 @@ class CampusCardService {
 
   static final CampusCardService instance = CampusCardService._();
 
+  final _logger = AppLogger.instance;
+
   static const String _storageKey = 'cached_campus_card_info';
   static const String _finServBase = 'https://fin-serv.hunau.edu.cn';
   static const String _cardPayPath = '/cardpay/openCardPay';
@@ -103,7 +106,44 @@ class CampusCardService {
   }
 
   /// 拉取最新余额。失败抛出可直接展示的中文原因。
-  Future<CampusCardInfo> refresh() async {
+  ///
+  /// 并发调用共享同一次请求，避免「我」页与详情页同时授权、互相顶掉会话。
+  /// 单次失败会换新会话重试一次，覆盖 fin-serv 偶发的「资源受限」。
+  Future<CampusCardInfo> refresh() {
+    final pending = _pendingRefresh;
+    if (pending != null) return pending;
+
+    final future = _refreshWithRetry();
+    _pendingRefresh = future;
+    return future.whenComplete(() {
+      if (identical(_pendingRefresh, future)) _pendingRefresh = null;
+    });
+  }
+
+  Future<CampusCardInfo>? _pendingRefresh;
+
+  Future<CampusCardInfo> _refreshWithRetry() async {
+    try {
+      return await _refreshOnce();
+    } catch (_) {
+      _session = null;
+      _openid = null;
+      await Future.delayed(const Duration(seconds: 2));
+      return _refreshOnce();
+    }
+  }
+
+  Future<CampusCardInfo> _refreshOnce() async {
+    // 已有会话先直接复用，避免每次刷新都重走超星授权导致服务端限流。
+    final existingSession = _session;
+    final existingOpenid = _openid;
+    if (existingSession != null && existingOpenid != null) {
+      final info = await _fetchBalance(existingSession, existingOpenid);
+      if (info != null) return _persist(info);
+      _session = null;
+      _openid = null;
+    }
+
     final session = _CardSession();
     for (final entry in AuthCookies.all.entries) {
       session.seed(entry.key, entry.value);
@@ -117,18 +157,71 @@ class CampusCardService {
     _session = session;
     _openid = openid;
 
-    final html = (await session.get(
-      '$_finServBase$_cardPayPath?openid=$openid&displayflag=1&id=28',
-      referer: '$_finServBase$_homePath?openid=$openid&usertype=2',
-    ))
-        .data ??
-        '';
-
-    final info = _parse(html);
-    if (info == null) {
-      throw Exception('未能解析校园卡余额，请稍后重试');
+    // 先访问一次 openHomePage，把 fin-serv 的会话 Cookie 预热起来，
+    // 否则 openCardPay 有一定概率落到 errorPage / 资源受限。
+    try {
+      await session.getFollowing(
+        '$_finServBase$_homePath?openid=$openid&usertype=2',
+        referer: AppConstants.campusCardUrl,
+      );
+    } catch (_) {
+      // 预热失败仍继续尝试充值页
     }
 
+    final info = await _fetchBalance(session, openid);
+    if (info == null) {
+      throw Exception('校园卡页面暂时无法访问，请稍后重试');
+    }
+    return _persist(info);
+  }
+
+  /// 请求 openCardPay 并解析余额；页面被重定向或限流时返回 null。
+  Future<CampusCardInfo?> _fetchBalance(
+    _CardSession session,
+    String openid,
+  ) async {
+    try {
+      final response = await session.getFollowing(
+        '$_finServBase$_cardPayPath?openid=$openid&displayflag=1&id=28',
+        referer: '$_finServBase$_homePath?openid=$openid&usertype=2',
+      );
+      final status = response.statusCode ?? 0;
+      final html = response.data ?? '';
+      _logger.d(
+        'campus card page: status=$status, length=${html.length}',
+      );
+
+      if (status >= 300) return null;
+      if (html.contains('资源受限') ||
+          html.contains('页面丢失') ||
+          html.contains('errorPage')) {
+        return null;
+      }
+
+      final info = _parse(html);
+      if (info != null) return info;
+
+      // 结构变化时退一步：只把余额抠出来，姓名/卡号沿用缓存。
+      final balance = _scanBalance(html);
+      if (balance != null) {
+        _logger.i('campus card: parsed balance only ($balance)');
+        return CampusCardInfo(
+          name: _cached?.name ?? '',
+          idserial: _cached?.idserial ?? '',
+          balance: balance,
+        );
+      }
+
+      final head = html.length > 300 ? html.substring(0, 300) : html;
+      _logger.w('campus card parse failed, head: $head');
+      return null;
+    } catch (e) {
+      _logger.w('campus card fetch failed: $e');
+      return null;
+    }
+  }
+
+  Future<CampusCardInfo> _persist(CampusCardInfo info) async {
     _cached = info;
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -333,6 +426,17 @@ class CampusCardService {
     return false;
   }
 
+  /// 只提取余额数字，用于页面结构变化但仍有「余额」文案的场景。
+  String? _scanBalance(String html) {
+    return RegExp(r'余额(?:<[^>]{0,40}>|[：:\s=]){0,4}\s*([0-9]+(?:\.[0-9]{1,2})?)')
+            .firstMatch(html)
+            ?.group(1) ??
+        RegExp(r'id="(?:balance|ye)"[^>]*value="([0-9]+(?:\.[0-9]+)?)"')
+            .firstMatch(html)
+            ?.group(1) ??
+        RegExp(r'([0-9]+\.[0-9]{2})\s*元').firstMatch(html)?.group(1);
+  }
+
   CampusCardInfo? _parse(String html) {
     // 标准结构：<p class="bdb">张三：202440800000 余额：21.00元</p>
     final infoText = RegExp(r'<p class="bdb">(.*?)</p>', dotAll: true)
@@ -452,6 +556,30 @@ class _CardSession {
       ),
     );
     _absorbCookies(response, uri);
+    return response;
+  }
+
+  /// GET 并手动跟随 301/302，直到拿到最终页面或跳到 errorPage。
+  ///
+  /// fin-serv 侧偶发把 openCardPay 重定向到登录页，跟随一次才能判断会话是否真的建立。
+  Future<Response<String>> getFollowing(String url, {String? referer}) async {
+    var current = url;
+    String? currentReferer = referer;
+    var response = await get(current, referer: currentReferer);
+
+    for (var step = 0; step < 6; step++) {
+      final status = response.statusCode ?? 0;
+      final location =
+          response.headers.value(HttpHeaders.locationHeader) ?? '';
+      if (status < 300 || status >= 400 || location.isEmpty) break;
+
+      final next = Uri.parse(current).resolve(location).toString();
+      if (next.contains('errorPage')) break;
+
+      currentReferer = current;
+      current = next;
+      response = await get(current, referer: currentReferer);
+    }
     return response;
   }
 
