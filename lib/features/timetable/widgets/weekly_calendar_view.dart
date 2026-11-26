@@ -120,7 +120,7 @@ class WeeklyCalendarViewState extends State<WeeklyCalendarView> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: context.colors.surface,
+        color: context.colors.bg,
       ),
       child: Row(
         children: [
@@ -164,7 +164,7 @@ class WeeklyCalendarViewState extends State<WeeklyCalendarView> {
               child: SingleChildScrollView(
                 scrollDirection: Axis.vertical,
                 child: Container(
-                  color: context.colors.surface,
+                  color: context.colors.bg,
                   child: SizedBox(
                     height: gridHeight,
                     width: screenWidth,
@@ -450,7 +450,7 @@ class WeeklyCalendarViewState extends State<WeeklyCalendarView> {
     return Container(
       height: 60,
       decoration: BoxDecoration(
-        color: colors.surface,
+        color: colors.bg,
         border: Border(
           bottom: BorderSide(color: colors.border, width: 1),
         ),

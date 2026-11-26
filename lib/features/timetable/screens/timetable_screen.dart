@@ -118,7 +118,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
               ),
               Container(
                 width: double.infinity,
-                color: colors.surface,
+                color: colors.bg,
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.page,
                   vertical: AppSpacing.sm,
