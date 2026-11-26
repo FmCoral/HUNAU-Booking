@@ -22,8 +22,13 @@ class ElectricityService {
 
   static const String _finServBase = 'https://fin-serv.hunau.edu.cn';
   static const String _factoryCode = 'E013';
-  static const String _roomKey = 'saved_electricity_room';
-  static const String _balanceKey = 'saved_electricity_balance_info';
+
+  static String _roomKey(int slot) =>
+      slot == 0 ? 'saved_electricity_room' : 'saved_electricity_room_${slot + 1}';
+
+  static String _balanceKey(int slot) => slot == 0
+      ? 'saved_electricity_balance_info'
+      : 'saved_electricity_balance_info_${slot + 1}';
 
   Future<List<ElectricityArea>> getAreas() async {
     final data = await CampusCardService.instance.postEncrypted(
@@ -63,7 +68,10 @@ class ElectricityService {
   }
 
   /// 查询宿舍电费余额。
-  Future<ElectricityBalanceInfo> getBalance(SavedElectricityRoom room) async {
+  Future<ElectricityBalanceInfo> getBalance(
+    SavedElectricityRoom room, {
+    int slot = 0,
+  }) async {
     await _warmElePay();
 
     final data = await CampusCardService.instance.postEncrypted(
@@ -91,8 +99,62 @@ class ElectricityService {
     }
 
     final info = ElectricityBalanceInfo.fromJson(result);
-    await _saveBalance(room, info);
+    await _saveBalance(room, info, slot: slot);
     return info;
+  }
+
+  /// 使用校园卡支付宿舍电费，逻辑与牛×5 一致。
+  Future<bool> recharge({
+    required SavedElectricityRoom room,
+    required double amount,
+  }) async {
+    var info = CampusCardService.instance.cached;
+    info ??= await CampusCardService.instance.refresh();
+    final openid = CampusCardService.instance.openid;
+    if (openid == null || openid.isEmpty) {
+      throw Exception('授权已失效，请重新打开校园卡');
+    }
+
+    // 记录最后使用的房间
+    await CampusCardService.instance.postEncrypted(
+      '$_finServBase/myaccount/userlastbind',
+      {
+        'payinfo': {'elepayWay': '2'},
+        'eleinfo': {
+          'schoolid': room.areaName,
+          'buildingid': room.buildingName,
+          'roomid': room.roomId,
+          'factorycode': _factoryCode,
+        },
+        'idserial': info.idserial,
+      },
+    );
+
+    // 发起预交易
+    final data = await CampusCardService.instance.postEncrypted(
+      '$_finServBase/elepay/createPreThirdTrade',
+      {
+        'payamt': amount.toStringAsFixed(0),
+        'openid': openid,
+        'idserial': info.idserial,
+        'factorycode': _factoryCode,
+        'buildingid': room.buildingName,
+        'roomid': room.roomId,
+        'schoolid': room.areaName,
+        'payWay': '2',
+        'mertype': room.mertype,
+      },
+    );
+
+    _logger.i('⚡ electricity recharge response: $data');
+    if (data is Map) {
+      return data['success'] == true ||
+          data['success'] == 'true' ||
+          data['code'] == '0' ||
+          data['code'] == 0 ||
+          (data.containsKey('resultData') && data['resultData'] != null);
+    }
+    return false;
   }
 
   /// 打开电费页建立会话，与牛×5 一致。
@@ -107,10 +169,10 @@ class ElectricityService {
     }
   }
 
-  Future<SavedElectricityRoom?> loadSavedRoom() async {
+  Future<SavedElectricityRoom?> loadSavedRoom({int slot = 0}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_roomKey);
+      final raw = prefs.getString(_roomKey(slot));
       if (raw == null || raw.isEmpty) return null;
       final data = jsonDecode(raw);
       if (data is Map) {
@@ -124,10 +186,10 @@ class ElectricityService {
     return null;
   }
 
-  Future<ElectricityBalanceInfo?> loadCachedBalance() async {
+  Future<ElectricityBalanceInfo?> loadCachedBalance({int slot = 0}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_balanceKey);
+      final raw = prefs.getString(_balanceKey(slot));
       if (raw == null || raw.isEmpty) return null;
       final data = jsonDecode(raw);
       if (data is Map) {
@@ -141,28 +203,29 @@ class ElectricityService {
     return null;
   }
 
-  Future<void> saveRoom(SavedElectricityRoom room) async {
+  Future<void> saveRoom(SavedElectricityRoom room, {int slot = 0}) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_roomKey, jsonEncode(room.toJson()));
-    await prefs.remove(_balanceKey);
+    await prefs.setString(_roomKey(slot), jsonEncode(room.toJson()));
+    await prefs.remove(_balanceKey(slot));
     electricityRevision.value++;
   }
 
-  Future<void> clearRoom() async {
+  Future<void> clearRoom({int slot = 0}) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_roomKey);
-    await prefs.remove(_balanceKey);
+    await prefs.remove(_roomKey(slot));
+    await prefs.remove(_balanceKey(slot));
     electricityRevision.value++;
   }
 
   Future<void> _saveBalance(
     SavedElectricityRoom room,
-    ElectricityBalanceInfo info,
-  ) async {
+    ElectricityBalanceInfo info, {
+    int slot = 0,
+  }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
-        _balanceKey,
+        _balanceKey(slot),
         jsonEncode({'roomId': room.roomId, ...info.toJson()}),
       );
     } catch (_) {

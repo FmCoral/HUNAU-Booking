@@ -5,7 +5,7 @@ import '../../../core/utils/app_logger.dart';
 import '../models/electricity_model.dart';
 import '../services/electricity_service.dart';
 
-/// 宿舍配置：选择校区、楼栋与房间，供「我」页展示电费余额。
+/// 宿舍配置：最多配置两个宿舍，逻辑与牛×5 一致。
 class DormConfigScreen extends StatefulWidget {
   const DormConfigScreen({super.key});
 
@@ -13,23 +13,25 @@ class DormConfigScreen extends StatefulWidget {
   State<DormConfigScreen> createState() => _DormConfigScreenState();
 }
 
+class _SlotState {
+  SavedElectricityRoom? saved;
+  String? areaName;
+  String? buildingName;
+  ElectricityRoom? room;
+  List<ElectricityBuilding> buildings = const [];
+  List<ElectricityRoom> rooms = const [];
+  bool loadingBuildings = false;
+  bool loadingRooms = false;
+}
+
 class _DormConfigScreenState extends State<DormConfigScreen> {
   final _logger = AppLogger.instance;
 
+  final List<_SlotState> _slots = [_SlotState(), _SlotState()];
   List<ElectricityArea> _areas = const [];
-  List<ElectricityBuilding> _buildings = const [];
-  List<ElectricityRoom> _rooms = const [];
 
-  String? _areaName;
-  String? _buildingName;
-  ElectricityRoom? _room;
-
-  SavedElectricityRoom? _saved;
-
+  int _expanded = 0;
   bool _loadingAreas = true;
-  bool _loadingBuildings = false;
-  bool _loadingRooms = false;
-  bool _saving = false;
   String? _error;
 
   @override
@@ -39,21 +41,32 @@ class _DormConfigScreenState extends State<DormConfigScreen> {
   }
 
   Future<void> _init() async {
-    final saved = await ElectricityService.instance.loadSavedRoom();
+    for (var slot = 0; slot < _slots.length; slot++) {
+      final saved = await ElectricityService.instance.loadSavedRoom(slot: slot);
+      if (!mounted) return;
+      final state = _slots[slot];
+      state.saved = saved;
+      state.areaName = saved?.areaName;
+      state.buildingName = saved?.buildingName;
+      if (saved != null) _expanded = slot;
+    }
     if (!mounted) return;
-    setState(() {
-      _saved = saved;
-      _areaName = saved?.areaName;
-      _buildingName = saved?.buildingName;
-    });
+    setState(() {});
+
     await _loadAreas();
-    if (saved != null) {
-      await _loadBuildings(saved.areaName, silent: true);
-      await _loadRooms(
-        saved.areaName,
-        saved.buildingName,
-        selectRoomId: saved.roomId,
-      );
+    for (var slot = 0; slot < _slots.length; slot++) {
+      final state = _slots[slot];
+      final area = state.areaName;
+      final building = state.buildingName;
+      if (area != null && building != null) {
+        await _loadBuildings(slot, area, silent: true);
+        await _loadRooms(
+          slot,
+          area,
+          building,
+          selectRoomId: state.saved?.roomId,
+        );
+      }
     }
   }
 
@@ -79,14 +92,15 @@ class _DormConfigScreenState extends State<DormConfigScreen> {
     }
   }
 
-  Future<void> _loadBuildings(String areaName, {bool silent = false}) async {
+  Future<void> _loadBuildings(int slot, String areaName, {bool silent = false}) async {
+    final state = _slots[slot];
     setState(() {
-      _loadingBuildings = true;
+      state.loadingBuildings = true;
       if (!silent) {
-        _buildings = const [];
-        _rooms = const [];
-        _buildingName = null;
-        _room = null;
+        state.buildings = const [];
+        state.rooms = const [];
+        state.buildingName = null;
+        state.room = null;
       }
     });
     try {
@@ -94,23 +108,25 @@ class _DormConfigScreenState extends State<DormConfigScreen> {
           await ElectricityService.instance.getBuildings(areaName);
       if (!mounted) return;
       setState(() {
-        _buildings = buildings;
-        _loadingBuildings = false;
+        state.buildings = buildings;
+        state.loadingBuildings = false;
       });
     } catch (e) {
       _logger.w('Load electricity buildings failed: $e');
       if (!mounted) return;
-      setState(() => _loadingBuildings = false);
+      setState(() => state.loadingBuildings = false);
       _toast(e.toString().replaceFirst('Exception: ', ''));
     }
   }
 
   Future<void> _loadRooms(
+    int slot,
     String areaName,
     String buildingName, {
     String? selectRoomId,
   }) async {
-    setState(() => _loadingRooms = true);
+    final state = _slots[slot];
+    setState(() => state.loadingRooms = true);
     try {
       final rooms = await ElectricityService.instance.getRooms(
         areaName,
@@ -118,12 +134,12 @@ class _DormConfigScreenState extends State<DormConfigScreen> {
       );
       if (!mounted) return;
       setState(() {
-        _rooms = rooms;
-        _loadingRooms = false;
+        state.rooms = rooms;
+        state.loadingRooms = false;
         if (selectRoomId != null) {
           for (final room in rooms) {
             if (room.id == selectRoomId) {
-              _room = room;
+              state.room = room;
               break;
             }
           }
@@ -132,44 +148,82 @@ class _DormConfigScreenState extends State<DormConfigScreen> {
     } catch (e) {
       _logger.w('Load electricity rooms failed: $e');
       if (!mounted) return;
-      setState(() => _loadingRooms = false);
+      setState(() => state.loadingRooms = false);
       _toast(e.toString().replaceFirst('Exception: ', ''));
     }
   }
 
-  Future<void> _pickArea() async {
+  Future<void> _pickArea(int slot) async {
+    final state = _slots[slot];
     final names = _areas.map((e) => e.name).toList();
-    final value = await _showPicker('选择校区', names, _areaName);
-    if (value == null || value == _areaName) return;
+    final value = await _showPicker('选择校区', names, state.areaName);
+    if (value == null || value == state.areaName) return;
     setState(() {
-      _areaName = value;
-      _buildingName = null;
-      _room = null;
+      state.areaName = value;
+      state.buildingName = null;
+      state.room = null;
     });
-    await _loadBuildings(value);
+    await _loadBuildings(slot, value);
   }
 
-  Future<void> _pickBuilding() async {
-    final names = _buildings.map((e) => e.name).toList();
-    final value = await _showPicker('选择楼栋', names, _buildingName);
-    if (value == null || value == _buildingName) return;
+  Future<void> _pickBuilding(int slot) async {
+    final state = _slots[slot];
+    final names = state.buildings.map((e) => e.name).toList();
+    final value = await _showPicker('选择楼栋', names, state.buildingName);
+    if (value == null || value == state.buildingName) return;
     setState(() {
-      _buildingName = value;
-      _room = null;
+      state.buildingName = value;
+      state.room = null;
     });
-    await _loadRooms(_areaName!, value);
+    await _loadRooms(slot, state.areaName!, value);
   }
 
-  Future<void> _pickRoom() async {
-    final names = _rooms.map((e) => e.name).toList();
-    final roomName = await _showPicker('选择房间', names, _room?.name);
+  Future<void> _pickRoom(int slot) async {
+    final state = _slots[slot];
+    final names = state.rooms.map((e) => e.name).toList();
+    final roomName = await _showPicker('选择房间', names, state.room?.name);
     if (roomName == null) return;
-    for (final room in _rooms) {
+    for (final room in state.rooms) {
       if (room.name == roomName) {
-        setState(() => _room = room);
+        setState(() => state.room = room);
+        await _saveSlot(slot);
         break;
       }
     }
+  }
+
+  Future<void> _saveSlot(int slot) async {
+    final state = _slots[slot];
+    final area = state.areaName;
+    final building = state.buildingName;
+    final room = state.room;
+    if (area == null || building == null || room == null) return;
+
+    final saved = SavedElectricityRoom(
+      areaName: area,
+      buildingName: building,
+      roomId: room.id,
+      roomName: room.name,
+      mertype: room.mertype,
+    );
+    await ElectricityService.instance.saveRoom(saved, slot: slot);
+    if (!mounted) return;
+    setState(() => state.saved = saved);
+    _toast('宿舍 ${slot + 1} 已保存');
+  }
+
+  Future<void> _clearSlot(int slot) async {
+    await ElectricityService.instance.clearRoom(slot: slot);
+    if (!mounted) return;
+    setState(() {
+      final state = _slots[slot];
+      state.saved = null;
+      state.areaName = null;
+      state.buildingName = null;
+      state.room = null;
+      state.buildings = const [];
+      state.rooms = const [];
+    });
   }
 
   Future<String?> _showPicker(
@@ -227,42 +281,6 @@ class _DormConfigScreenState extends State<DormConfigScreen> {
     );
   }
 
-  Future<void> _save() async {
-    final area = _areaName;
-    final building = _buildingName;
-    final room = _room;
-    if (area == null || building == null || room == null) {
-      _toast('请选择完整的宿舍信息');
-      return;
-    }
-
-    setState(() => _saving = true);
-    try {
-      await ElectricityService.instance.saveRoom(
-        SavedElectricityRoom(
-          areaName: area,
-          buildingName: building,
-          roomId: room.id,
-          roomName: room.name,
-          mertype: room.mertype,
-        ),
-      );
-      if (!mounted) return;
-      _toast('已保存');
-      Navigator.pop(context, true);
-    } catch (e) {
-      if (!mounted) return;
-      _toast(e.toString().replaceFirst('Exception: ', ''));
-      setState(() => _saving = false);
-    }
-  }
-
-  Future<void> _clear() async {
-    await ElectricityService.instance.clearRoom();
-    if (!mounted) return;
-    Navigator.pop(context, true);
-  }
-
   void _toast(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -273,89 +291,18 @@ class _DormConfigScreenState extends State<DormConfigScreen> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final saved = _saved;
-    final canSave = _areaName != null &&
-        _buildingName != null &&
-        _room != null &&
-        !_saving;
 
     return Scaffold(
       appBar: AppBar(title: const Text('宿舍配置')),
       body: ListView(
         padding: const EdgeInsets.all(AppSpacing.page),
         children: [
-          if (saved != null) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(AppSpacing.card),
-              decoration: BoxDecoration(
-                color: c.surface,
-                borderRadius: AppRadius.cardAll,
-                border: Border.all(color: c.border),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '当前宿舍',
-                    style: AppText.caption.copyWith(
-                      color: c.textMuted,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(
-                    '${saved.areaName} ${saved.buildingName} ${saved.roomName}',
-                    style: AppText.bodyDense.copyWith(
-                      color: c.text,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
+          for (var slot = 0; slot < _slots.length; slot++) ...[
+            if (slot > 0) const SizedBox(height: AppSpacing.md),
+            _buildSlotCard(context, slot),
           ],
-          Container(
-            padding: const EdgeInsets.all(AppSpacing.card),
-            decoration: BoxDecoration(
-              color: c.surface,
-              borderRadius: AppRadius.cardAll,
-              border: Border.all(color: c.border),
-            ),
-            child: Column(
-              children: [
-                _buildSelector(
-                  context,
-                  label: '校区',
-                  value: _areaName,
-                  loading: _loadingAreas,
-                  enabled: !_loadingAreas,
-                  onTap: _pickArea,
-                ),
-                const SizedBox(height: AppSpacing.md),
-                _buildSelector(
-                  context,
-                  label: '楼栋',
-                  value: _buildingName,
-                  loading: _loadingBuildings,
-                  enabled: _areaName != null && !_loadingBuildings,
-                  onTap: _pickBuilding,
-                ),
-                const SizedBox(height: AppSpacing.md),
-                _buildSelector(
-                  context,
-                  label: '房间',
-                  value: _room?.name,
-                  loading: _loadingRooms,
-                  enabled: _buildingName != null && !_loadingRooms,
-                  onTap: _pickRoom,
-                ),
-              ],
-            ),
-          ),
           if (_error != null) ...[
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.lg),
             Text(
               _error!,
               style: AppText.caption.copyWith(color: c.danger),
@@ -366,30 +313,143 @@ class _DormConfigScreenState extends State<DormConfigScreen> {
               child: const Text('重新加载'),
             ),
           ],
-          const SizedBox(height: AppSpacing.xl),
-          SizedBox(
-            height: 48,
-            child: FilledButton(
-              onPressed: canSave ? _save : null,
-              child: _saving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('保存'),
-            ),
-          ),
-          if (saved != null) ...[
-            const SizedBox(height: AppSpacing.md),
-            Center(
-              child: TextButton(
-                onPressed: _saving ? null : _clear,
-                style: TextButton.styleFrom(foregroundColor: c.danger),
-                child: const Text('清除宿舍配置'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSlotCard(BuildContext context, int slot) {
+    final c = context.colors;
+    final state = _slots[slot];
+    final expanded = _expanded == slot;
+
+    final desc = state.saved == null
+        ? '宿舍 ${slot + 1}（未选择）'
+        : '${state.saved!.areaName} - ${state.saved!.buildingName} - ${state.saved!.roomName}';
+
+    return Container(
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: AppRadius.cardAll,
+        border: Border.all(color: expanded ? c.brand : c.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          InkWell(
+            onTap: () => setState(() => _expanded = slot),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.card,
+                vertical: AppSpacing.card,
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      desc,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.bodyDense.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: c.text,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Icon(
+                    expanded
+                        ? Icons.keyboard_arrow_up
+                        : Icons.keyboard_arrow_down,
+                    size: 18,
+                    color: c.textMuted,
+                  ),
+                ],
               ),
             ),
-          ],
+          ),
+          if (expanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.card,
+                0,
+                AppSpacing.card,
+                AppSpacing.card,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        '宿舍 ${slot + 1}',
+                        style: AppText.caption.copyWith(
+                          color: c.textMuted,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (state.saved != null)
+                        InkWell(
+                          onTap: () => _clearSlot(slot),
+                          borderRadius: AppRadius.innerAll,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.xs,
+                              vertical: 2,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.delete_outline,
+                                  size: 14,
+                                  color: c.textMuted,
+                                ),
+                                const SizedBox(width: AppSpacing.xs),
+                                Text(
+                                  '清除',
+                                  style: AppText.caption.copyWith(
+                                    color: c.textMuted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  _buildSelector(
+                    context,
+                    label: '校区',
+                    value: state.areaName,
+                    loading: _loadingAreas,
+                    enabled: !_loadingAreas,
+                    onTap: () => _pickArea(slot),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  _buildSelector(
+                    context,
+                    label: '楼栋',
+                    value: state.buildingName,
+                    loading: state.loadingBuildings,
+                    enabled: state.areaName != null && !state.loadingBuildings,
+                    onTap: () => _pickBuilding(slot),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  _buildSelector(
+                    context,
+                    label: '房间',
+                    value: state.room?.name,
+                    loading: state.loadingRooms,
+                    enabled:
+                        state.buildingName != null && !state.loadingRooms,
+                    onTap: () => _pickRoom(slot),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );

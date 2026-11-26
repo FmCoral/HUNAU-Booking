@@ -5,8 +5,6 @@ import '../../../core/theme/app_tokens.dart';
 import '../../../core/utils/route_utils.dart';
 import '../../timetable/services/timetable_events.dart';
 import '../../timetable/services/ydjwxt_service.dart';
-import '../models/electricity_model.dart';
-import '../services/electricity_service.dart';
 import 'dorm_config_screen.dart';
 
 /// 设置页：目前提供教务课表同步入口。
@@ -21,26 +19,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final YdjwxtService _service = YdjwxtService();
 
   bool _syncing = false;
-  SavedElectricityRoom? _dorm;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadDorm();
-  }
-
-  Future<void> _loadDorm() async {
-    final dorm = await ElectricityService.instance.loadSavedRoom();
-    if (!mounted) return;
-    setState(() => _dorm = dorm);
-  }
 
   Future<void> _openDormConfig() async {
     await Navigator.push(
       context,
       createSlideHorizontalRoute(const DormConfigScreen()),
     );
-    await _loadDorm();
   }
 
   Future<void> _sync() async {
@@ -157,26 +141,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       const SizedBox(width: AppSpacing.lg),
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              '宿舍配置',
-                              style: AppText.body.copyWith(color: c.text),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              _dorm == null
-                                  ? '未选择宿舍'
-                                  : '${_dorm!.areaName} ${_dorm!.buildingName} ${_dorm!.roomName}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppText.caption.copyWith(
-                                color: c.textMuted,
-                              ),
-                            ),
-                          ],
+                        child: Text(
+                          '宿舍配置',
+                          style: AppText.body.copyWith(color: c.text),
                         ),
                       ),
                       Icon(

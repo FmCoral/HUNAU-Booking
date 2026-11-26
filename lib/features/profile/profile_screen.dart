@@ -5,7 +5,7 @@ import '../../core/theme/app_tokens.dart';
 import '../../core/utils/route_utils.dart';
 import 'screens/account_screen.dart';
 import 'screens/campus_card_screen.dart';
-import 'screens/dorm_config_screen.dart';
+import 'screens/dorm_recharge_screen.dart';
 import 'models/electricity_model.dart';
 import 'services/campus_card_service.dart';
 import 'services/electricity_service.dart';
@@ -25,8 +25,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _retried = false;
   String? _error;
 
-  SavedElectricityRoom? _dorm;
-  ElectricityBalanceInfo? _eleBalance;
+  final List<SavedElectricityRoom?> _dorms = [null, null];
+  final List<ElectricityBalanceInfo?> _eleBalances = [null, null];
   bool _eleLoading = false;
 
   @override
@@ -92,10 +92,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (mounted) await _refresh();
   }
 
-  Future<void> _openDormConfig() async {
+  Future<void> _openDormRecharge(int slot, SavedElectricityRoom room) async {
     await Navigator.push(
       context,
-      createSlideHorizontalRoute(const DormConfigScreen()),
+      createSlideHorizontalRoute(
+        DormRechargeScreen(room: room, slot: slot),
+      ),
     );
     await _loadElectricity();
   }
@@ -103,22 +105,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _loadElectricity() async {
     if (_eleLoading) return;
 
-    final room = await ElectricityService.instance.loadSavedRoom();
-    if (!mounted) return;
-    if (room == null) {
-      setState(() {
-        _dorm = null;
-        _eleBalance = null;
-        _eleLoading = false;
-      });
-      return;
+    final rooms = <SavedElectricityRoom?>[];
+    final cachedBalances = <ElectricityBalanceInfo?>[];
+    for (var slot = 0; slot < _dorms.length; slot++) {
+      rooms.add(await ElectricityService.instance.loadSavedRoom(slot: slot));
+      cachedBalances.add(
+        await ElectricityService.instance.loadCachedBalance(slot: slot),
+      );
     }
-
-    final cached = await ElectricityService.instance.loadCachedBalance();
     if (!mounted) return;
+
     setState(() {
-      _dorm = room;
-      _eleBalance = cached ?? _eleBalance;
+      for (var slot = 0; slot < _dorms.length; slot++) {
+        _dorms[slot] = rooms[slot];
+        if (cachedBalances[slot] != null) {
+          _eleBalances[slot] = cachedBalances[slot];
+        }
+        if (rooms[slot] == null) {
+          _eleBalances[slot] = null;
+        }
+      }
       _eleLoading = true;
     });
 
@@ -127,17 +133,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
-    try {
-      final balance = await ElectricityService.instance.getBalance(room);
-      if (!mounted) return;
-      setState(() {
-        _eleBalance = balance;
-        _eleLoading = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _eleLoading = false);
+    for (var slot = 0; slot < _dorms.length; slot++) {
+      final room = rooms[slot];
+      if (room == null) continue;
+      try {
+        final balance = await ElectricityService.instance.getBalance(
+          room,
+          slot: slot,
+        );
+        if (!mounted) return;
+        setState(() => _eleBalances[slot] = balance);
+      } catch (_) {
+        // 保持缓存值，失败静默
+      }
     }
+    if (mounted) setState(() => _eleLoading = false);
   }
 
   String _formatElectricityBalance(String raw) {
@@ -254,23 +264,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 const SizedBox(width: AppSpacing.md),
-                if (_loading && info != null)
-                  SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: c.textMuted,
-                    ),
-                  )
-                else
-                  Text(
-                    balanceText,
-                    style: AppText.keyNumber.copyWith(
-                      fontSize: 17,
-                      color: c.text,
-                    ),
+                Text(
+                  balanceText,
+                  style: AppText.keyNumber.copyWith(
+                    fontSize: 17,
+                    color: c.text,
                   ),
+                ),
               ],
             ),
           ),
@@ -281,109 +281,158 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildElectricityCard(BuildContext context) {
     final c = context.colors;
-    final room = _dorm;
+    final entries = <({int slot, SavedElectricityRoom room})>[
+      for (var slot = 0; slot < _dorms.length; slot++)
+        if (_dorms[slot] != null) (slot: slot, room: _dorms[slot]!),
+    ];
 
-    final String title;
-    final String subtitle;
-    final String balanceText;
-    var balanceColor = c.text;
-
-    if (room == null) {
-      title = '宿舍电费';
-      subtitle = '请在设置-通用设置-宿舍配置 选择宿舍';
-      balanceText = '¥--';
-    } else {
-      title = room.areaName.isNotEmpty ? room.areaName : '宿舍电费';
-      final roomName = room.roomName.isNotEmpty ? room.roomName : room.roomId;
-      if (room.buildingName.isEmpty) {
-        subtitle = roomName;
-      } else if (room.buildingName.endsWith(roomName)) {
-        subtitle = room.buildingName;
-      } else {
-        subtitle = '${room.buildingName} $roomName';
-      }
-
-      final balance = _eleBalance;
-      balanceText = balance != null
-          ? '¥${_formatElectricityBalance(balance.balance)}'
-          : (_eleLoading ? '...' : '¥--');
-      final value = balance != null ? double.tryParse(balance.balance) : null;
-      if (value != null && value <= 10) {
-        balanceColor = c.danger;
-      }
+    if (entries.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg,
+          vertical: 14,
+        ),
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: AppRadius.cardAll,
+          border: Border.all(color: c.border),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.bolt_outlined,
+              size: 22,
+              color: Color(0xFFFF9800),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '宿舍电费',
+                    style: AppText.bodyDense.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: c.text,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '未选择宿舍',
+                    style: AppText.caption.copyWith(color: c.textMuted),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '设置 · 通用设置 · 宿舍配置',
+                    style: AppText.caption.copyWith(
+                      fontSize: 11,
+                      color: c.textMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
     }
 
     return Container(
       width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: 8,
+      ),
       decoration: BoxDecoration(
         color: c.surface,
         borderRadius: AppRadius.cardAll,
         border: Border.all(color: c.border),
       ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: AppRadius.cardAll,
-        child: InkWell(
-          borderRadius: AppRadius.cardAll,
-          onTap: _openDormConfig,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.lg,
-              vertical: 14,
-            ),
-            child: Row(
+      child: Row(
+        children: [
+          const Icon(
+            Icons.bolt_outlined,
+            size: 22,
+            color: Color(0xFFFF9800),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
               children: [
-                const Icon(
-                  Icons.bolt_outlined,
-                  size: 22,
-                  color: Color(0xFFFF9800),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppText.bodyDense.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: c.text,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        subtitle,
-                        maxLines: room == null ? 2 : 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppText.caption.copyWith(color: c.textMuted),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                if (_eleLoading && room != null)
-                  SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: c.textMuted,
-                    ),
-                  )
-                else
-                  Text(
-                    balanceText,
-                    style: AppText.keyNumber.copyWith(
-                      fontSize: 17,
-                      color: balanceColor,
-                    ),
-                  ),
+                for (var i = 0; i < entries.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 4),
+                  _buildDormRow(context, entries[i].slot, entries[i].room),
+                ],
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDormRow(
+    BuildContext context,
+    int slot,
+    SavedElectricityRoom room,
+  ) {
+    final c = context.colors;
+    final balance = _eleBalances[slot];
+    final roomName = room.roomName.isNotEmpty ? room.roomName : room.roomId;
+    final subtitle = room.buildingName.isEmpty
+        ? roomName
+        : (room.buildingName.endsWith(roomName)
+            ? room.buildingName
+            : '${room.buildingName} $roomName');
+    final balanceText = balance != null
+        ? '¥${_formatElectricityBalance(balance.balance)}'
+        : (_eleLoading ? '...' : '¥--');
+    var balanceColor = c.text;
+    final value = balance != null ? double.tryParse(balance.balance) : null;
+    if (value != null && value <= 10) balanceColor = c.danger;
+
+    return InkWell(
+      borderRadius: AppRadius.innerAll,
+      onTap: () => _openDormRecharge(slot, room),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    room.areaName.isNotEmpty ? room.areaName : '宿舍电费',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.bodyDense.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: c.text,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.caption.copyWith(color: c.textMuted),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Text(
+              balanceText,
+              style: AppText.keyNumber.copyWith(
+                fontSize: 17,
+                color: balanceColor,
+              ),
+            ),
+          ],
         ),
       ),
     );
