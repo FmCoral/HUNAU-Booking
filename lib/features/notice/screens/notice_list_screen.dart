@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/utils/route_utils.dart';
-import '../models/message_model.dart';
-import '../services/notice_service.dart';
+import '../models/announcement.dart';
+import '../services/announcement_service.dart';
 import 'notice_detail_screen.dart';
 
-/// 公告列表，布局与牛×5 一致。
+/// 软件公告列表。
 class NoticeListScreen extends StatefulWidget {
   const NoticeListScreen({super.key});
 
@@ -15,95 +15,38 @@ class NoticeListScreen extends StatefulWidget {
 }
 
 class _NoticeListScreenState extends State<NoticeListScreen> {
-  final ScrollController _scrollController = ScrollController();
-  final Set<String> _readIds = <String>{};
-
-  List<MessageModel> _messages = const [];
-  String? _lastValue;
-  bool _hasMore = false;
+  List<Announcement> _items = const [];
   bool _loading = true;
-  bool _loadingMore = false;
   String? _error;
-  int _requestSeq = 0;
 
   @override
   void initState() {
     super.initState();
-    _scrollController.addListener(_onScroll);
-    _refresh();
+    _load();
   }
 
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
-      if (!_loading && !_loadingMore && _hasMore) {
-        _loadMore();
-      }
-    }
-  }
-
-  Future<void> _refresh() async {
-    final seq = ++_requestSeq;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final result = await NoticeService.instance.fetchMessageList();
-      if (!mounted || seq != _requestSeq) return;
+  Future<void> _load() async {
+    if (mounted) {
       setState(() {
-        _messages = result.messages;
-        _lastValue = result.nextLastValue;
-        _hasMore = result.hasMore;
+        _loading = true;
+        _error = null;
+      });
+    }
+    try {
+      final items = await AnnouncementService.instance.fetch();
+      if (!mounted) return;
+      setState(() {
+        _items = items;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted || seq != _requestSeq) return;
+      if (!mounted) return;
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _loading = false;
       });
     }
   }
-
-  Future<void> _loadMore() async {
-    if (_loadingMore) return;
-    setState(() => _loadingMore = true);
-    try {
-      final result =
-          await NoticeService.instance.fetchMessageList(lastValue: _lastValue);
-      if (!mounted) return;
-      setState(() {
-        _messages = [..._messages, ...result.messages];
-        _lastValue = result.nextLastValue;
-        _hasMore = result.hasMore;
-        _loadingMore = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _loadingMore = false);
-    }
-  }
-
-  Future<void> _openDetail(MessageModel message) async {
-    await Navigator.push(
-      context,
-      createSlideHorizontalRoute(
-        NoticeDetailScreen(noticeId: message.idCode),
-      ),
-    );
-    if (!mounted) return;
-    setState(() => _readIds.add(message.idCode));
-  }
-
-  bool _isRead(MessageModel message) =>
-      message.isRead || _readIds.contains(message.idCode);
 
   @override
   Widget build(BuildContext context) {
@@ -116,11 +59,11 @@ class _NoticeListScreenState extends State<NoticeListScreen> {
   Widget _buildBody(BuildContext context) {
     final c = context.colors;
 
-    if (_loading && _messages.isEmpty) {
+    if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (_error != null && _messages.isEmpty) {
+    if (_error != null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxxl),
@@ -135,30 +78,24 @@ class _NoticeListScreenState extends State<NoticeListScreen> {
                 style: AppText.bodyDense.copyWith(color: c.textMuted),
               ),
               const SizedBox(height: AppSpacing.xl),
-              ElevatedButton(
-                onPressed: _refresh,
-                child: const Text('重试'),
-              ),
+              ElevatedButton(onPressed: _load, child: const Text('重试')),
             ],
           ),
         ),
       );
     }
 
-    if (_messages.isEmpty) {
+    if (_items.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(Icons.notifications_none, size: 72, color: c.textMuted),
             const SizedBox(height: AppSpacing.lg),
-            Text(
-              '暂无公告',
-              style: AppText.sectionTitle.copyWith(color: c.text),
-            ),
+            Text('暂无公告', style: AppText.sectionTitle.copyWith(color: c.text)),
             const SizedBox(height: AppSpacing.sm),
             Text(
-              '有新的通知时会显示在这里',
+              '有新的消息时会显示在这里',
               style: AppText.caption.copyWith(color: c.textMuted),
             ),
           ],
@@ -167,77 +104,48 @@ class _NoticeListScreenState extends State<NoticeListScreen> {
     }
 
     return RefreshIndicator(
-      onRefresh: _refresh,
-      child: ListView.builder(
-        controller: _scrollController,
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-        itemCount: _messages.length + (_hasMore ? 1 : 0),
-        itemBuilder: (context, index) {
-          if (index == _messages.length) {
-            return Padding(
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              child: Center(
-                child: _loadingMore
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const SizedBox.shrink(),
-              ),
-            );
-          }
-          return _buildMessageCard(context, _messages[index]);
-        },
+      onRefresh: _load,
+      child: ListView.separated(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(AppSpacing.page),
+        itemCount: _items.length,
+        separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.md),
+        itemBuilder: (context, index) => _buildCard(context, _items[index]),
       ),
     );
   }
 
-  Widget _buildMessageCard(BuildContext context, MessageModel message) {
+  Widget _buildCard(BuildContext context, Announcement item) {
     final c = context.colors;
-    final read = _isRead(message);
+    final icon = _iconFor(item.type, c);
 
-    String timeDisplay = message.sendTime;
-    try {
-      final parts = message.sendTime.split(' ');
-      if (parts.length > 1) {
-        final date = parts[0];
-        final time = parts[1];
-        final now = DateTime.now();
-        final today =
-            '${now.year}-${_twoDigits(now.month)}-${_twoDigits(now.day)}';
-        timeDisplay = (date == today) ? time.substring(0, 5) : date.substring(5);
-      }
-    } catch (_) {}
-
-    final initial = message.createrName.isNotEmpty
-        ? message.createrName[0]
-        : '公';
-
-    return Material(
-      color: Colors.transparent,
+    return Container(
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: AppRadius.cardAll,
+        border: Border.all(color: c.border),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => _openDetail(message),
+        onTap: () => Navigator.push(
+          context,
+          createSlideHorizontalRoute(NoticeDetailScreen(item: item)),
+        ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.page,
-            vertical: AppSpacing.md,
-          ),
+          padding: const EdgeInsets.all(AppSpacing.card),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              CircleAvatar(
-                radius: 20,
-                backgroundColor: c.statusBg(c.brand),
-                child: Text(
-                  initial,
-                  style: AppText.bodyDense.copyWith(
-                    color: c.brandText,
-                    fontWeight: FontWeight.w600,
-                  ),
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: c.statusBg(icon.color),
+                  borderRadius: AppRadius.innerAll,
                 ),
+                child: Icon(icon.icon, size: 20, color: icon.color),
               ),
-              const SizedBox(width: AppSpacing.lg),
+              const SizedBox(width: AppSpacing.md),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -246,42 +154,41 @@ class _NoticeListScreenState extends State<NoticeListScreen> {
                       children: [
                         Expanded(
                           child: Text(
-                            message.createrName.isEmpty
-                                ? '系统通知'
-                                : message.createrName,
-                            style: AppText.body.copyWith(
-                              fontWeight:
-                                  read ? FontWeight.w400 : FontWeight.w600,
-                              color: read ? c.textMuted : c.text,
+                            item.title,
+                            style: AppText.bodyDense.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: c.text,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        Text(
-                          timeDisplay,
-                          style: AppText.caption.copyWith(color: c.textMuted),
-                        ),
+                        if (item.pinned) ...[
+                          const SizedBox(width: AppSpacing.xs),
+                          Text(
+                            '置顶',
+                            style: AppText.caption.copyWith(
+                              color: c.brandText,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 4),
                     Text(
-                      message.title,
-                      style: AppText.bodyDense.copyWith(
-                        color: read ? c.textMuted : c.text,
-                        fontWeight: read ? FontWeight.w400 : FontWeight.w600,
-                      ),
-                      maxLines: 1,
+                      item.content.replaceAll('\n', ' '),
+                      style: AppText.caption.copyWith(color: c.textMuted),
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 1),
+                    const SizedBox(height: 6),
                     Text(
-                      message.content
-                          .replaceAll(RegExp(r'<[^>]*>|&[^;]+;'), '')
-                          .trim(),
-                      style: AppText.caption.copyWith(color: c.textMuted),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      item.publishedAt,
+                      style: AppText.caption.copyWith(
+                        fontSize: 11,
+                        color: c.textMuted,
+                      ),
                     ),
                   ],
                 ),
@@ -293,5 +200,19 @@ class _NoticeListScreenState extends State<NoticeListScreen> {
     );
   }
 
-  String _twoDigits(int n) => n.toString().padLeft(2, '0');
+  ({IconData icon, Color color}) _iconFor(
+    String type,
+    AppSemanticColors c,
+  ) {
+    switch (type) {
+      case 'feature':
+        return (icon: Icons.auto_awesome_outlined, color: c.brand);
+      case 'fix':
+        return (icon: Icons.build_outlined, color: c.info);
+      case 'warning':
+        return (icon: Icons.warning_amber_outlined, color: c.warning);
+      default:
+        return (icon: Icons.campaign_outlined, color: c.brand);
+    }
+  }
 }

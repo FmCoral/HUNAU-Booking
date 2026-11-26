@@ -11,6 +11,10 @@ class AppConstants {
   static const String updateVersionUrl =
       'https://apk.book.hunau.fmcoral.com/latest/version.json';
 
+  /// 软件公告（R2 公共桶，手动上传）
+  static const String announcementsUrl =
+      'https://apk.book.hunau.fmcoral.com/latest/announcements.json';
+
   /// APK 下载地址（R2 公共桶）
   static const String updateDownloadUrl =
       'https://apk.book.hunau.fmcoral.com/latest/app-release.apk';

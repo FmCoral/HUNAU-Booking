@@ -26,7 +26,7 @@ class _HelpFeedbackScreenState extends State<HelpFeedbackScreen> {
   Future<void> _submitFeedback() async {
     final content = _controller.text.trim();
     if (content.isEmpty) {
-      _toast('请输入反馈内容');
+      _toast('请输入内容');
       return;
     }
 
@@ -128,12 +128,12 @@ class _HelpFeedbackScreenState extends State<HelpFeedbackScreen> {
               maxLength: 1000,
               textInputAction: TextInputAction.newline,
               decoration: const InputDecoration(
-                hintText: '请描述你遇到的问题或建议',
+                hintText: '请描述您遇到的问题或建议…',
                 alignLabelWithHint: true,
               ),
             ),
             Text(
-              '反馈将附带你的账号信息，便于我们联系你',
+              '将附带相关信息用于调试',
               style: AppText.caption.copyWith(color: colors.textMuted),
             ),
             const Spacer(),

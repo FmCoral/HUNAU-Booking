@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Book｜湖南农业大学校园助手</title>
+<meta name="description" content="湖南农业大学校园助手：课表、校园卡、宿舍电费一屏直达。">
+<meta name="keywords" content="湖南农业大学,智慧湘农,湘农,湖南农大,课表,校园卡,宿舍电费,校园公告,Book">
+<meta name="author" content="湖南农业大学 Book 团队">
+<meta property="og:title" content="Book｜湖南农业大学校园助手">
+<meta property="og:description" content="湖南农业大学校园助手 Book：课表、校园卡、宿舍电费、公告，一屏直达。">
+<meta property="og:type" content="website">
+<link rel="canonical" href="https://book.hunau.fmcoral.com/">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: #f7fbf6;
+    color: #16221a;
+    -webkit-font-smoothing: antialiased;
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100dvh;
+  }
+
+  /* ============ 背景大字 ============ */
+  .bg-word {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    overflow: hidden;
+    -webkit-mask-image: radial-gradient(ellipse 72% 66% at 50% 50%, #000 42%, transparent 84%);
+            mask-image: radial-gradient(ellipse 72% 66% at 50% 50%, #000 42%, transparent 84%);
+  }
+
+  .bg-word span {
+    font-size: clamp(120px, 32vw, 520px);
+    font-weight: 900;
+    letter-spacing: -0.055em;
+    line-height: 1;
+    color: #6ecb63;
+    opacity: 0.24;
+    user-select: none;
+    white-space: nowrap;
+    animation: breathe 14s ease-in-out infinite;
+  }
+
+  @keyframes breathe {
+    0%, 100% { transform: scale(1) translateY(0); }
+    50%      { transform: scale(1.035) translateY(-10px); }
+  }
+
+  /* ============ 内容（靠左） ============ */
+  .stage {
+    position: relative;
+    z-index: 10;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    text-align: left;
+    padding-left: clamp(28px, 9vw, 150px);
+    padding-right: 24px;
+  }
+
+  .stage h1 {
+    font-size: clamp(26px, 4vw, 40px);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    margin-bottom: 16px;
+  }
+
+  .stage h1 em {
+    font-style: normal;
+    background: linear-gradient(100deg, #47b45c, #2f9e44 60%, #1f7a35);
+    -webkit-background-clip: text;
+            background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .stage p {
+    font-size: clamp(17px, 2.1vw, 20px);
+    color: #5f6f64;
+    line-height: 1.75;
+    max-width: 640px;
+    margin-bottom: 28px;
+  }
+
+  /* ============ 下载按钮 ============ */
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 15.5px;
+    font-weight: 600;
+    color: #fff;
+    padding: 13px 28px;
+    border-radius: 13px;
+    background: linear-gradient(135deg, #3fbf5a, #2f9e44);
+    box-shadow: 0 12px 26px -10px rgba(47, 158, 68, 0.85);
+    transition: transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s;
+    text-decoration: none;
+  }
+  .btn-primary:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 20px 34px -12px rgba(47, 158, 68, 0.95);
+  }
+  .btn-primary:active { transform: translateY(-1px) scale(.99); }
+
+  /* ============ 辅助说明 ============ */
+  .hint {
+    margin-top: 14px;
+    font-size: 12.5px;
+    color: #7b8a80;
+    letter-spacing: .01em;
+  }
+
+  /* 仅供搜索引擎读取，不参与视觉呈现 */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* ============ Toast ============ */
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 40px;
+    transform: translate(-50%, 18px);
+    z-index: 200;
+    padding: 14px 24px;
+    border-radius: 999px;
+    background: #16221a;
+    color: #e9f5ea;
+    font-size: 14px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .3s, transform .3s;
+    box-shadow: 0 16px 34px -12px rgba(0, 0, 0, 0.5);
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  /* ============ 入场 ============ */
+  .fade-up {
+    opacity: 0;
+    transform: translateY(16px);
+    animation: fadeUp .8s cubic-bezier(.2,.8,.2,1) forwards;
+    animation-delay: var(--d, 0s);
+  }
+  @keyframes fadeUp { to { opacity: 1; transform: none; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+    .fade-up { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- 背景大字 -->
+  <div class="bg-word" aria-hidden="true"><span>HUNAU</span></div>
+
+  <!-- 内容 -->
+  <main class="stage">
+    <p class="fade-up" style="--d:.08s">
+      湖南农业大学校园助手：课表、校园卡、宿舍电费一屏直达。
+    </p>
+    <a class="btn-primary fade-up" style="--d:.25s" id="downloadBtn"
+       href="https://apk.book.hunau.fmcoral.com/latest/app-release.apk">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M4 20h16"/>
+      </svg>
+      下载
+    </a>
+    <div class="hint fade-up" style="--d:.32s">适用于 Android</div>
+  </main>
+
+  <!-- 供搜索引擎识别的补充信息（不显示） -->
+  <section class="sr-only" aria-hidden="true">
+    <h2>湖南农业大学智慧湘农校园助手</h2>
+    <p>
+      Book（智慧湘农）是湖南农业大学学生自制的校园工具，提供湖南农业大学课表查询、
+      校园卡余额与充值、宿舍电费查询充值、校园公告查看等功能。
+      面向湖南农业大学（湘农、湖南农大）在校学生，帮助同学们更方便地安排校园生活。
+    </p>
+    <p>
+      关键词：湖南农业大学、智慧湘农、湘农、湖南农大、校园助手、校园卡、课表、宿舍电费、校园公告。
+    </p>
+  </section>
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Book 智慧湘农",
+    "alternateName": ["智慧湘农", "湖南农业大学校园助手", "湘农 Book"],
+    "applicationCategory": "EducationalApplication",
+    "operatingSystem": "Android",
+    "description": "湖南农业大学校园助手，提供课表、校园卡、宿舍电费与校园公告等功能。",
+    "url": "https://book-hunau.fmcoral.com/",
+    "downloadUrl": "https://apk.book.hunau.fmcoral.com/latest/app-release.apk",
+    "provider": {
+      "@type": "CollegeOrUniversity",
+      "name": "湖南农业大学"
+    }
+  }
+  </script>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+<script>
+  const toast = document.getElementById('toast');
+  let timer = null;
+
+  document.getElementById('downloadBtn').addEventListener('click', () => {
+    toast.textContent = '正在下载 Book，请稍候…';
+    toast.classList.add('show');
+    clearTimeout(timer);
+    timer = setTimeout(() => toast.classList.remove('show'), 2400);
+  });
+</script>
+</body>
+</html>
