@@ -232,6 +232,35 @@ class CampusCardService {
     return info;
   }
 
+  /// 复用当前 fin-serv 会话请求页面（电费等子应用用）。
+  Future<String?> getFinServ(
+    String path, {
+    Map<String, String>? query,
+    String? referer,
+  }) async {
+    final openid = await ensureCardPayAuthenticated();
+    final session = _session;
+    if (openid == null || session == null) return null;
+
+    final uri = Uri.parse('$_finServBase$path').replace(
+      queryParameters: {'openid': openid, ...?query},
+    );
+    final response = await session.getFollowing(
+      uri.toString(),
+      referer: referer ?? '$_finServBase$_homePath?openid=$openid&usertype=2',
+    );
+    return response.data;
+  }
+
+  /// 与充值同源的加密 POST（电费等子应用复用）。
+  Future<dynamic> postEncrypted(
+    String url,
+    Map<String, dynamic> payload,
+  ) async {
+    await ensureCardPayAuthenticated();
+    return _postCardPay(url, payload);
+  }
+
   /// 确保充值环境可用：已有会话先预热 openCardPay，否则重新授权。
   Future<String?> ensureCardPayAuthenticated({bool force = false}) async {
     if (force || _openid == null || _session == null || _cached == null) {

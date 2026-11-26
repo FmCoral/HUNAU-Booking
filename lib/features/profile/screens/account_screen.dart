@@ -47,7 +47,7 @@ class AccountScreen extends StatelessWidget {
                   _buildListTile(
                     context,
                     icon: Icons.settings_outlined,
-                    title: '设置',
+                    title: '通用设置',
                     onTap: () => Navigator.push(
                       context,
                       createSlideHorizontalRoute(const SettingsScreen()),
@@ -58,12 +58,6 @@ class AccountScreen extends StatelessWidget {
                     context,
                     icon: Icons.help_outline_rounded,
                     title: '帮助与反馈',
-                  ),
-                  Divider(height: 1, indent: 56, color: c.border),
-                  _buildListTile(
-                    context,
-                    icon: Icons.rocket_launch_outlined,
-                    title: '开始引导',
                   ),
                   Divider(height: 1, indent: 56, color: c.border),
                   _buildListTile(

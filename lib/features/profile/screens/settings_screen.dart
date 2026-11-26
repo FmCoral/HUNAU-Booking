@@ -2,8 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../../../core/auth_scope.dart';
 import '../../../core/theme/app_tokens.dart';
+import '../../../core/utils/route_utils.dart';
 import '../../timetable/services/timetable_events.dart';
 import '../../timetable/services/ydjwxt_service.dart';
+import '../models/electricity_model.dart';
+import '../services/electricity_service.dart';
+import 'dorm_config_screen.dart';
 
 /// 设置页：目前提供教务课表同步入口。
 class SettingsScreen extends StatefulWidget {
@@ -17,6 +21,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final YdjwxtService _service = YdjwxtService();
 
   bool _syncing = false;
+  SavedElectricityRoom? _dorm;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDorm();
+  }
+
+  Future<void> _loadDorm() async {
+    final dorm = await ElectricityService.instance.loadSavedRoom();
+    if (!mounted) return;
+    setState(() => _dorm = dorm);
+  }
+
+  Future<void> _openDormConfig() async {
+    await Navigator.push(
+      context,
+      createSlideHorizontalRoute(const DormConfigScreen()),
+    );
+    await _loadDorm();
+  }
 
   Future<void> _sync() async {
     if (_syncing) return;
@@ -51,7 +76,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final c = context.colors;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('设置')),
+      appBar: AppBar(title: const Text('通用设置')),
       body: ListView(
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.page,
@@ -100,6 +125,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           size: 22,
                           color: c.textMuted,
                         ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Container(
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: AppRadius.cardAll,
+              border: Border.all(color: c.border),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: _openDormConfig,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 56),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.lg,
+                    vertical: AppSpacing.md,
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.bolt_outlined,
+                        size: 22,
+                        color: Color(0xFFFF9800),
+                      ),
+                      const SizedBox(width: AppSpacing.lg),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '宿舍配置',
+                              style: AppText.body.copyWith(color: c.text),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _dorm == null
+                                  ? '未选择宿舍'
+                                  : '${_dorm!.areaName} ${_dorm!.buildingName} ${_dorm!.roomName}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppText.caption.copyWith(
+                                color: c.textMuted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        size: 22,
+                        color: c.textMuted,
+                      ),
                     ],
                   ),
                 ),
