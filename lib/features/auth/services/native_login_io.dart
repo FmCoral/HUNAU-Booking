@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import '../../../core/constants/app_constants.dart';
 import '../../../core/network/auth_cookies.dart';
+import '../../../core/services/avatar_service.dart';
 import '../models/auth_profile.dart';
 import 'http_login_service.dart';
 
@@ -12,11 +12,14 @@ class NativeLoginService {
     AuthCookies.save(result.cookies);
     final profile = result.profile;
     final uid = _findChaoxingUid(result.cookies);
+    // 头像地址未登录会 302，先带 Cookie 下载到本地再展示。
+    final avatarPath =
+        uid == null ? null : await AvatarService.instance.fetchToFile(uid);
     return AuthProfile(
       username: profile?.username ?? username,
       realName: profile?.realName,
       uid: uid,
-      avatarUrl: uid == null ? null : AppConstants.fusionAvatarUrl(uid),
+      avatarUrl: avatarPath,
     );
   }
 

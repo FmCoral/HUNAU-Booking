@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/auth_controller.dart';
@@ -128,19 +130,31 @@ class AccountScreen extends StatelessWidget {
       child: Icon(Icons.person_rounded, size: 36, color: c.textMuted),
     );
 
+    Widget image;
+    if (avatarUrl == null || avatarUrl.isEmpty) {
+      image = fallback;
+    } else if (avatarUrl.startsWith('http')) {
+      image = Image.network(
+        avatarUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => fallback,
+        loadingBuilder: (context, child, progress) =>
+            progress == null ? child : fallback,
+      );
+    } else {
+      // 头像已带 Cookie 下载到本地，避免 302 到登录页。
+      image = Image.file(
+        File(avatarUrl),
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => fallback,
+      );
+    }
+
     return ClipOval(
       child: SizedBox(
         width: 72,
         height: 72,
-        child: avatarUrl == null || avatarUrl.isEmpty
-            ? fallback
-            : Image.network(
-                avatarUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => fallback,
-                loadingBuilder: (context, child, progress) =>
-                    progress == null ? child : fallback,
-              ),
+        child: image,
       ),
     );
   }
