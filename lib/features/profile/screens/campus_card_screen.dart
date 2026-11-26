@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_tokens.dart';
@@ -23,16 +22,15 @@ class CampusCardScreen extends StatefulWidget {
 class _CampusCardScreenState extends State<CampusCardScreen>
     with WidgetsBindingObserver {
   final _logger = AppLogger.instance;
-  final TextEditingController _amountController = TextEditingController();
 
-  static const List<double> _presetAmounts = [20, 50, 100, 200, 500];
+  static const List<double> _presetAmounts = [10, 20, 50];
 
   CampusCardInfo? _info;
   bool _loading = true;
   bool _refreshing = false;
   bool _paying = false;
   String? _error;
-  double? _selectedAmount;
+  double? _selectedAmount = 10;
 
   @override
   void initState() {
@@ -44,7 +42,6 @@ class _CampusCardScreenState extends State<CampusCardScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _amountController.dispose();
     super.dispose();
   }
 
@@ -98,18 +95,15 @@ class _CampusCardScreenState extends State<CampusCardScreen>
   }
 
   void _selectPreset(double amount) {
-    setState(() {
-      _selectedAmount = amount;
-      _amountController.text = amount.toStringAsFixed(0);
-    });
+    setState(() => _selectedAmount = amount);
   }
 
   Future<void> _startRecharge(PaymentMethod method) async {
     if (_paying) return;
 
-    final amount = int.tryParse(_amountController.text.trim());
-    if (amount == null || amount < 1 || amount > 1000) {
-      _toast('请输入 1-1000 元之间的充值金额');
+    final amount = _selectedAmount;
+    if (amount == null) {
+      _toast('请选择充值金额');
       return;
     }
 
@@ -188,16 +182,6 @@ class _CampusCardScreenState extends State<CampusCardScreen>
             ),
             const SizedBox(height: AppSpacing.md),
             _buildPresetGrid(context),
-            const SizedBox(height: AppSpacing.lg),
-            Text(
-              '自定义金额',
-              style: AppText.bodyDense.copyWith(
-                fontWeight: FontWeight.w600,
-                color: context.colors.textMuted,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            _buildAmountInput(context),
             const SizedBox(height: AppSpacing.xxl),
           ],
         ),
@@ -324,21 +308,6 @@ class _CampusCardScreenState extends State<CampusCardScreen>
             ),
           ),
         );
-      },
-    );
-  }
-
-  Widget _buildAmountInput(BuildContext context) {
-    final c = context.colors;
-
-    return TextField(
-      controller: _amountController,
-      keyboardType: TextInputType.number,
-      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-      decoration: const InputDecoration(prefixText: '¥ '),
-      style: AppText.keyNumber.copyWith(color: c.text),
-      onChanged: (value) {
-        setState(() => _selectedAmount = double.tryParse(value));
       },
     );
   }
