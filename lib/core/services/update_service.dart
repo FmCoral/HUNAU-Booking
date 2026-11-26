@@ -50,6 +50,21 @@ class UpdateService {
         if (_isNewerVersion(latestVersion, currentVersion)) {
           if (!context.mounted) return;
 
+          if (showNoUpdate) {
+            // 手动检查更新：直接进入更新说明页，不再弹底部提示。
+            Navigator.push(
+              context,
+              createSlideUpRoute(
+                UpdateScreen(
+                  version: latestVersion,
+                  releaseNotes: releaseNotes,
+                  downloadUrl: AppConstants.updateDownloadUrl,
+                ),
+              ),
+            );
+            return;
+          }
+
           final messenger = ScaffoldMessenger.of(context);
           messenger.showSnackBar(
             SnackBar(
@@ -76,19 +91,6 @@ class UpdateService {
             const Duration(seconds: 5),
             () => messenger.hideCurrentSnackBar(),
           );
-
-          if (showNoUpdate) {
-            Navigator.push(
-              context,
-              createSlideUpRoute(
-                UpdateScreen(
-                  version: latestVersion,
-                  releaseNotes: releaseNotes,
-                  downloadUrl: AppConstants.updateDownloadUrl,
-                ),
-              ),
-            );
-          }
         } else if (showNoUpdate && context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('已是最新版本')),

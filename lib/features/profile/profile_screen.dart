@@ -92,11 +92,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (mounted) await _refresh();
   }
 
-  Future<void> _openDormRecharge(int slot, SavedElectricityRoom room) async {
+  Future<void> _openDormRecharge(int slot) async {
+    final targets = <DormRechargeTarget>[
+      for (var i = 0; i < _dorms.length; i++)
+        if (_dorms[i] != null)
+          DormRechargeTarget(slot: i, room: _dorms[i]!),
+    ];
     await Navigator.push(
       context,
       createSlideHorizontalRoute(
-        DormRechargeScreen(room: room, slot: slot),
+        DormRechargeScreen(targets: targets, initialSlot: slot),
       ),
     );
     await _loadElectricity();
@@ -178,7 +183,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: AppSpacing.sm),
             Text(
               '余额',
               style: AppText.sectionTitle.copyWith(color: context.colors.text),
@@ -395,7 +400,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     return InkWell(
       borderRadius: AppRadius.innerAll,
-      onTap: () => _openDormRecharge(slot, room),
+      onTap: () => _openDormRecharge(slot),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(

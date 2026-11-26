@@ -5,16 +5,23 @@ import '../../../core/utils/app_logger.dart';
 import '../models/electricity_model.dart';
 import '../services/electricity_service.dart';
 
-/// 宿舍电费充值：选择金额后用校园卡支付。
+class DormRechargeTarget {
+  const DormRechargeTarget({required this.slot, required this.room});
+
+  final int slot;
+  final SavedElectricityRoom room;
+}
+
+/// 宿舍电费充值：页内可切换已配置的宿舍，选择金额后用校园卡支付。
 class DormRechargeScreen extends StatefulWidget {
   const DormRechargeScreen({
     super.key,
-    required this.room,
-    required this.slot,
+    required this.targets,
+    required this.initialSlot,
   });
 
-  final SavedElectricityRoom room;
-  final int slot;
+  final List<DormRechargeTarget> targets;
+  final int initialSlot;
 
   @override
   State<DormRechargeScreen> createState() => _DormRechargeScreenState();
@@ -26,15 +33,24 @@ class _DormRechargeScreenState extends State<DormRechargeScreen>
 
   static const List<double> _presetAmounts = [10, 20, 50, 100];
 
+  late int _slot;
   ElectricityBalanceInfo? _balance;
   double? _selectedAmount = 10;
   bool _loading = true;
   bool _paying = false;
 
+  DormRechargeTarget get _target => widget.targets.firstWhere(
+        (t) => t.slot == _slot,
+        orElse: () => widget.targets.first,
+      );
+
+  SavedElectricityRoom get _room => _target.room;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _slot = widget.initialSlot;
     _bootstrap();
   }
 
@@ -53,7 +69,7 @@ class _DormRechargeScreenState extends State<DormRechargeScreen>
 
   Future<void> _bootstrap() async {
     final cached = await ElectricityService.instance.loadCachedBalance(
-      slot: widget.slot,
+      slot: _slot,
     );
     if (!mounted) return;
     if (cached != null) {
@@ -65,20 +81,36 @@ class _DormRechargeScreenState extends State<DormRechargeScreen>
     await _loadBalance();
   }
 
+  Future<void> _switchSlot(int slot) async {
+    if (slot == _slot) return;
+    setState(() {
+      _slot = slot;
+      _balance = null;
+      _loading = true;
+    });
+    final cached = await ElectricityService.instance.loadCachedBalance(
+      slot: slot,
+    );
+    if (!mounted) return;
+    if (cached != null) setState(() => _balance = cached);
+    await _loadBalance();
+  }
+
   Future<void> _loadBalance() async {
+    final slot = _slot;
     try {
       final balance = await ElectricityService.instance.getBalance(
-        widget.room,
-        slot: widget.slot,
+        _room,
+        slot: slot,
       );
-      if (!mounted) return;
+      if (!mounted || _slot != slot) return;
       setState(() {
         _balance = balance;
         _loading = false;
       });
     } catch (e) {
       _logger.w('Load dorm balance failed: $e');
-      if (!mounted) return;
+      if (!mounted || _slot != slot) return;
       setState(() => _loading = false);
     }
   }
@@ -109,7 +141,7 @@ class _DormRechargeScreenState extends State<DormRechargeScreen>
     setState(() => _paying = true);
     try {
       final success = await ElectricityService.instance.recharge(
-        room: widget.room,
+        room: _room,
         amount: amount,
       );
       if (!mounted) return;
@@ -139,7 +171,7 @@ class _DormRechargeScreenState extends State<DormRechargeScreen>
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final room = widget.room;
+    final room = _room;
 
     return Scaffold(
       appBar: AppBar(title: const Text('宿舍电费')),
@@ -148,6 +180,22 @@ class _DormRechargeScreenState extends State<DormRechargeScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (widget.targets.length > 1) ...[
+              Row(
+                children: [
+                  for (var i = 0; i < widget.targets.length; i++) ...[
+                    if (i > 0) const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: _buildSlotChip(
+                        context,
+                        widget.targets[i].slot,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+            ],
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(AppSpacing.card),
@@ -276,6 +324,31 @@ class _DormRechargeScreenState extends State<DormRechargeScreen>
                       ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSlotChip(BuildContext context, int slot) {
+    final c = context.colors;
+    final selected = _slot == slot;
+    return InkWell(
+      borderRadius: AppRadius.controlAll,
+      onTap: () => _switchSlot(slot),
+      child: Container(
+        height: 40,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? c.statusBg(c.brand) : c.surface,
+          borderRadius: AppRadius.controlAll,
+          border: Border.all(color: selected ? c.brand : c.border),
+        ),
+        child: Text(
+          '宿舍 ${slot + 1}',
+          style: AppText.bodyDense.copyWith(
+            color: selected ? c.brandText : c.text,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
           ),
         ),
       ),

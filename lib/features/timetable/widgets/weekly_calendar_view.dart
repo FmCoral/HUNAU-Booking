@@ -146,7 +146,7 @@ class WeeklyCalendarViewState extends State<WeeklyCalendarView> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final screenWidth = constraints.maxWidth;
+        final screenWidth = constraints.maxWidth - 4;
         // 定义大节固定高度和间距
         const double sectionHeight = 100.0;
         const double targetGap = 4.0;
@@ -154,36 +154,39 @@ class WeeklyCalendarViewState extends State<WeeklyCalendarView> {
         final double gridHeight =
             totalBigSections * (sectionHeight + targetGap);
 
-        return Column(
-          children: [
-            // 星期标题行固定在顶部，不随课程网格滚动
-            _buildWeekdayHeader(screenWidth, weekMonday),
+        return Padding(
+          padding: const EdgeInsets.only(right: 4),
+          child: Column(
+            children: [
+              // 星期标题行固定在顶部，不随课程网格滚动
+              _buildWeekdayHeader(screenWidth, weekMonday),
 
-            // 仅课程网格可纵向滚动
-            Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.vertical,
-                child: Container(
-                  color: context.colors.bg,
-                  child: SizedBox(
-                    height: gridHeight,
-                    width: screenWidth,
-                    child: Stack(
-                      children: [
-                        // 左侧时间轴 (起止时间显示)
-                        _buildFixedTimeAxis(
-                            totalBigSections, sectionHeight, targetGap),
+              // 仅课程网格可纵向滚动
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.vertical,
+                  child: Container(
+                    color: context.colors.bg,
+                    child: SizedBox(
+                      height: gridHeight,
+                      width: screenWidth,
+                      child: Stack(
+                        children: [
+                          // 左侧时间轴 (起止时间显示)
+                          _buildFixedTimeAxis(
+                              totalBigSections, sectionHeight, targetGap),
 
-                        // 课程块
-                        ..._buildFixedCourseBlocks(
-                            weekCourses, screenWidth, sectionHeight, targetGap),
-                      ],
+                          // 课程块
+                          ..._buildFixedCourseBlocks(weekCourses, screenWidth,
+                              sectionHeight, targetGap),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         );
       },
     );
