@@ -12,7 +12,6 @@ class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
 
   static const String _websiteUrl = 'https://book.hunau.fmcoral.com';
-  static const String _privacyUrl = 'https://book.hunau.fmcoral.com/privacy';
 
   Future<void> _openUrl(BuildContext context, String url) async {
     try {
@@ -106,12 +105,6 @@ class AboutScreen extends StatelessWidget {
                     ),
                   ),
                   Divider(height: 1, indent: 56, color: c.border),
-                  _buildTile(
-                    context,
-                    icon: Icons.privacy_tip_outlined,
-                    title: '隐私政策',
-                    onTap: () => _openUrl(context, _privacyUrl),
-                  ),
                 ],
               ),
             ),
