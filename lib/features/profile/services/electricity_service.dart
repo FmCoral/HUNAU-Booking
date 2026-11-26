@@ -217,6 +217,16 @@ class ElectricityService {
     electricityRevision.value++;
   }
 
+  /// 退出登录时清除所有宿舍配置与余额缓存。
+  Future<void> clearAll() async {
+    final prefs = await SharedPreferences.getInstance();
+    for (var slot = 0; slot < 2; slot++) {
+      await prefs.remove(_roomKey(slot));
+      await prefs.remove(_balanceKey(slot));
+    }
+    electricityRevision.value++;
+  }
+
   Future<void> _saveBalance(
     SavedElectricityRoom room,
     ElectricityBalanceInfo info, {

@@ -5,7 +5,9 @@ import '../../../core/auth_scope.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/utils/route_utils.dart';
 import 'about_screen.dart';
+import 'help_feedback_screen.dart';
 import 'settings_screen.dart';
+import '../../notice/screens/notice_list_screen.dart';
 
 /// 账号页：用户信息、设置入口与退出登录。
 ///
@@ -56,8 +58,22 @@ class AccountScreen extends StatelessWidget {
                   Divider(height: 1, indent: 56, color: c.border),
                   _buildListTile(
                     context,
+                    icon: Icons.campaign_outlined,
+                    title: '公告',
+                    onTap: () => Navigator.push(
+                      context,
+                      createSlideHorizontalRoute(const NoticeListScreen()),
+                    ),
+                  ),
+                  Divider(height: 1, indent: 56, color: c.border),
+                  _buildListTile(
+                    context,
                     icon: Icons.help_outline_rounded,
                     title: '帮助与反馈',
+                    onTap: () => Navigator.push(
+                      context,
+                      createSlideHorizontalRoute(const HelpFeedbackScreen()),
+                    ),
                   ),
                   Divider(height: 1, indent: 56, color: c.border),
                   _buildListTile(
@@ -230,6 +246,9 @@ class AccountScreen extends StatelessWidget {
 
     if (confirmed == true && context.mounted) {
       await auth.logout();
+      if (!context.mounted) return;
+      // 退出后清掉所有已打开页面，回到登录首页。
+      Navigator.of(context).popUntil((route) => route.isFirst);
     }
   }
 }

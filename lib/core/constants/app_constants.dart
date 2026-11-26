@@ -15,6 +15,12 @@ class AppConstants {
   static const String updateDownloadUrl =
       'https://apk.book.hunau.fmcoral.com/latest/app-release.apk';
 
+  // 反馈服务
+  static const String feedbackEndpoint =
+      'https://feedback.hunau.fmcoral.com/api/v1/feedback';
+  static const String feedbackMyEndpoint =
+      'https://feedback.hunau.fmcoral.com/api/v1/feedback/my';
+
   /// 每日开放时刻（08:00:00），释放次日的预约额度
   static const int openHour = 8;
 

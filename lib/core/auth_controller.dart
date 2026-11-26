@@ -6,6 +6,7 @@ import '../features/auth/models/auth_profile.dart';
 import '../features/auth/services/auth_backend.dart';
 import '../features/auth/services/native_login.dart';
 import '../features/profile/services/campus_card_service.dart';
+import '../features/profile/services/electricity_service.dart';
 import '../features/timetable/services/timetable_storage.dart';
 import 'exceptions/app_exceptions.dart';
 import 'network/auth_cookies.dart';
@@ -101,6 +102,7 @@ class AuthController extends ChangeNotifier {
     YdjwxtAuthService().clearToken();
     AuthCookies.clear();
     await CampusCardService.instance.clearSession();
+    await ElectricityService.instance.clearAll();
     _user = null;
     _errorMessage = null;
     notifyListeners();
