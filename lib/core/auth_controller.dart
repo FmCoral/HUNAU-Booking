@@ -80,6 +80,10 @@ class AuthController extends ChangeNotifier {
       _user = profile;
       if (!_web) {
         await _store.saveCredentials(username: username, password: password);
+        // 显式登录视为账号切换：清掉上一个账号的余额与宿舍缓存，
+        // 并让仍在飞行中的旧请求结果失效。
+        await CampusCardService.instance.clearSession();
+        await ElectricityService.instance.clearAll();
       }
       await _store.saveProfile(profile);
     } on AppException catch (error) {

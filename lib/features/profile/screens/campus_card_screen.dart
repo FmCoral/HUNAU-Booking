@@ -32,7 +32,8 @@ class _CampusCardScreenState extends State<CampusCardScreen>
   bool _paying = false;
   String? _error;
   double? _selectedAmount = 10;
-  final _amountController = TextEditingController(text: '10');
+  bool _customActive = false;
+  final _amountController = TextEditingController();
 
   @override
   void initState() {
@@ -98,13 +99,17 @@ class _CampusCardScreenState extends State<CampusCardScreen>
   }
 
   void _selectPreset(double amount) {
-    _amountController.text = amount.toStringAsFixed(0);
-    setState(() => _selectedAmount = amount);
+    _amountController.clear();
+    setState(() {
+      _customActive = false;
+      _selectedAmount = amount;
+    });
   }
 
   void _onCustomAmountChanged(String raw) {
     final value = double.tryParse(raw);
     setState(() {
+      _customActive = raw.trim().isNotEmpty;
       _selectedAmount = (value != null && value > 0) ? value : null;
     });
   }
@@ -305,7 +310,7 @@ class _CampusCardScreenState extends State<CampusCardScreen>
       itemCount: _presetAmounts.length,
       itemBuilder: (context, index) {
         final amount = _presetAmounts[index];
-        final selected = _selectedAmount == amount;
+        final selected = !_customActive && _selectedAmount == amount;
         return InkWell(
           onTap: () => _selectPreset(amount),
           borderRadius: AppRadius.controlAll,

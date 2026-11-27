@@ -95,6 +95,9 @@ class CampusCardService {
 
   /// 退出登录时清空，避免下一个账号看到上一个人的余额。
   Future<void> clearSession() async {
+    _epoch++;
+    _pendingRefresh = null;
+    _pendingEpoch = -1;
     _cached = null;
     _openid = null;
     _session = null;
@@ -113,45 +116,60 @@ class CampusCardService {
   /// 单次失败会换新会话重试一次，覆盖 fin-serv 偶发的「资源受限」。
   Future<CampusCardInfo> refresh() {
     final pending = _pendingRefresh;
-    if (pending != null) return pending;
+    // 只复用同一账号下的请求，避免切换账号后拿到上一个人的结果。
+    if (pending != null && _pendingEpoch == _epoch) return pending;
 
-    final future = _refreshWithRetry();
-    _pendingRefresh = future;
-    return future.whenComplete(() {
-      if (identical(_pendingRefresh, future)) _pendingRefresh = null;
+    final epoch = _epoch;
+    late final Future<CampusCardInfo> future;
+    future = _refreshWithRetry(epoch).whenComplete(() {
+      if (identical(_pendingRefresh, future)) {
+        _pendingRefresh = null;
+        _pendingEpoch = -1;
+      }
     });
+    _pendingRefresh = future;
+    _pendingEpoch = epoch;
+    return future;
   }
 
   Future<CampusCardInfo>? _pendingRefresh;
+  int _pendingEpoch = -1;
 
-  Future<CampusCardInfo> _refreshWithRetry() async {
+  /// 账号切换计数：退出登录 / 重新登录时自增，旧账号的请求结果一律丢弃。
+  int _epoch = 0;
+
+  Future<CampusCardInfo> _refreshWithRetry(int epoch) async {
     try {
-      return await _refreshOnce();
-    } catch (_) {
+      return await _refreshOnce(epoch);
+    } catch (error) {
+      if (epoch != _epoch) rethrow;
       // 会话可能已被服务端作废：丢掉本地会话后重新授权一次。
-      await _dropSession();
+      await _dropSession(epoch);
       await Future.delayed(const Duration(seconds: 1));
-      return _refreshOnce();
+      return _refreshOnce(epoch);
     }
   }
 
-  Future<CampusCardInfo> _refreshOnce() async {
+  Future<CampusCardInfo> _refreshOnce(int epoch) async {
     // 冷启动时优先恢复上次的 fin-serv 会话，避免每次都重走超星 302 授权
     // （授权链偶发「资源受限」，是余额同步失败的主要原因）。
     if (_session == null || _openid == null) {
       await _restoreSession();
     }
+    _ensureEpoch(epoch);
 
     // 已有会话先直接复用，避免每次刷新都重走超星授权导致服务端限流。
     final existingSession = _session;
     final existingOpenid = _openid;
     if (existingSession != null && existingOpenid != null) {
       final info = await _fetchBalance(existingSession, existingOpenid);
+      _ensureEpoch(epoch);
       if (info != null) {
-        await _persistSession();
-        return _persist(info);
+        await _persistSession(epoch);
+        return _persist(info, epoch);
       }
-      await _dropSession();
+      await _dropSession(epoch);
+      _ensureEpoch(epoch);
     }
 
     final session = _CardSession();
@@ -160,6 +178,7 @@ class CampusCardService {
     }
 
     final openid = await session.authorize();
+    _ensureEpoch(epoch);
     if (openid == null) {
       throw Exception('校园卡授权失败，请重新登录后再试');
     }
@@ -177,13 +196,19 @@ class CampusCardService {
     } catch (_) {
       // 预热失败仍继续尝试充值页
     }
+    _ensureEpoch(epoch);
 
     final info = await _fetchBalance(session, openid);
+    _ensureEpoch(epoch);
     if (info == null) {
       throw Exception('校园卡页面暂时无法访问，请稍后重试');
     }
-    await _persistSession();
-    return _persist(info);
+    await _persistSession(epoch);
+    return _persist(info, epoch);
+  }
+
+  void _ensureEpoch(int epoch) {
+    if (epoch != _epoch) throw Exception('登录账号已切换');
   }
 
   /// 请求余额页；openCardPay 失败时按牛×5 的顺序回退到付款码页与首页。
@@ -259,7 +284,8 @@ class CampusCardService {
     return html.contains('cas/login') || html.contains('统一身份认证');
   }
 
-  Future<void> _persistSession() async {
+  Future<void> _persistSession(int epoch) async {
+    if (epoch != _epoch) return;
     final session = _session;
     final openid = _openid;
     if (session == null || openid == null) return;
@@ -291,7 +317,8 @@ class CampusCardService {
     }
   }
 
-  Future<void> _dropSession() async {
+  Future<void> _dropSession(int epoch) async {
+    if (epoch != _epoch) return;
     _session = null;
     _openid = null;
     try {
@@ -302,7 +329,8 @@ class CampusCardService {
     }
   }
 
-  Future<CampusCardInfo> _persist(CampusCardInfo info) async {
+  Future<CampusCardInfo> _persist(CampusCardInfo info, int epoch) async {
+    if (epoch != _epoch) return info;
     _cached = info;
     try {
       final prefs = await SharedPreferences.getInstance();
