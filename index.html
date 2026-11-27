@@ -237,6 +237,13 @@
     * { animation: none !important; transition: none !important; }
     .fade-up { opacity: 1; transform: none; }
   }
+
+  /* 手机端：HUNAU 旋转 90° 侧躺（由 JS 计算纵向拉伸铺满屏幕高度） */
+  @media (max-width: 640px) {
+    .bg-word span {
+      font-size: 110vw;
+    }
+  }
 </style>
 </head>
 <body>
@@ -314,16 +321,19 @@
     const cs = getComputedStyle(bgWord);
     const rect = bgWord.getBoundingClientRect();
     const target = window.innerHeight - 40;
+    const text = bgWord.textContent.trim();
 
+    let textWidth = rect.width;
     let glyphHeight = rect.height * 0.72;
     let offsetY = 0;
 
     if (measureCtx) {
       measureCtx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-      const text = bgWord.textContent.trim();
       const m = measureCtx.measureText(text);
       const inkTop = m.actualBoundingBoxAscent;
       const inkBottom = m.actualBoundingBoxDescent;
+
+      if (m.width > 0) textWidth = m.width;
 
       if (inkTop + inkBottom > 0) {
         glyphHeight = inkTop + inkBottom;
@@ -338,9 +348,19 @@
       }
     }
 
+    // 手机竖屏：HUNAU 侧躺（rotate 90°），沿屏幕纵向拉伸铺满
+    // 旋转后墨迹中心在屏幕上向左偏 offsetY，用外层 translate 拉回屏幕中线
+    if (window.innerWidth <= 640 && window.innerHeight > window.innerWidth) {
+      if (textWidth <= 0) return;
+      const s = target / textWidth;
+      bgWord.style.transform =
+        `translate(${offsetY.toFixed(2)}px, 0) rotate(90deg) scaleX(${s.toFixed(3)})`;
+      return;
+    }
+
     if (glyphHeight <= 0) return;
     const s = target / glyphHeight;
-    // 先缩放再平移，抵消墨迹中心偏移，保证上下各留 10px
+    // 先缩放再平移，抵消墨迹中心偏移，保证上下各留 20px
     bgWord.style.transform =
       `scaleY(${s.toFixed(3)}) translateY(${(-offsetY).toFixed(2)}px)`;
   }
