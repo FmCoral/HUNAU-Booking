@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/utils/app_logger.dart';
@@ -36,6 +37,7 @@ class _DormRechargeScreenState extends State<DormRechargeScreen>
   late int _slot;
   ElectricityBalanceInfo? _balance;
   double? _selectedAmount = 10;
+  final _amountController = TextEditingController(text: '10');
   bool _loading = true;
   bool _paying = false;
 
@@ -57,6 +59,7 @@ class _DormRechargeScreenState extends State<DormRechargeScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _amountController.dispose();
     super.dispose();
   }
 
@@ -117,13 +120,20 @@ class _DormRechargeScreenState extends State<DormRechargeScreen>
 
   Future<void> _recharge() async {
     final amount = _selectedAmount;
-    if (amount == null || _paying) return;
+    if (amount == null || _paying) {
+      if (amount == null) _toast('请输入充值金额');
+      return;
+    }
+    if (amount < 1 || amount > 1000) {
+      _toast('充值金额需在 1–1000 元之间');
+      return;
+    }
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('确认充值'),
-        content: Text('使用校园卡支付 ¥${amount.toStringAsFixed(0)} 充值宿舍电费？'),
+        content: Text('使用校园卡支付 ¥${_formatAmount(amount)} 充值宿舍电费？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -257,7 +267,7 @@ class _DormRechargeScreenState extends State<DormRechargeScreen>
                 final amount = _presetAmounts[index];
                 final selected = _selectedAmount == amount;
                 return InkWell(
-                  onTap: () => setState(() => _selectedAmount = amount),
+                  onTap: () => _selectPreset(amount),
                   borderRadius: AppRadius.controlAll,
                   child: Container(
                     alignment: Alignment.center,
@@ -278,6 +288,42 @@ class _DormRechargeScreenState extends State<DormRechargeScreen>
                   ),
                 );
               },
+            ),
+            const SizedBox(height: AppSpacing.md),
+            TextField(
+              controller: _amountController,
+              keyboardType: TextInputType.number,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(4),
+              ],
+              onChanged: (raw) {
+                final value = double.tryParse(raw);
+                setState(() {
+                  _selectedAmount =
+                      (value != null && value > 0) ? value : null;
+                });
+              },
+              style: AppText.bodyDense.copyWith(color: c.text),
+              decoration: InputDecoration(
+                hintText: '自定义金额（1–1000）',
+                prefixText: '¥ ',
+                isDense: true,
+                filled: true,
+                fillColor: c.surface,
+                border: OutlineInputBorder(
+                  borderRadius: AppRadius.controlAll,
+                  borderSide: BorderSide(color: c.border),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: AppRadius.controlAll,
+                  borderSide: BorderSide(color: c.border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: AppRadius.controlAll,
+                  borderSide: BorderSide(color: c.brand),
+                ),
+              ),
             ),
           ],
         ),
@@ -354,6 +400,15 @@ class _DormRechargeScreenState extends State<DormRechargeScreen>
       ),
     );
   }
+
+  void _selectPreset(double amount) {
+    _amountController.text = amount.toStringAsFixed(0);
+    setState(() => _selectedAmount = amount);
+  }
+
+  String _formatAmount(double value) => value == value.roundToDouble()
+      ? value.toInt().toString()
+      : value.toStringAsFixed(2);
 
   String _formatBalance(String raw) {
     final value = double.tryParse(raw);

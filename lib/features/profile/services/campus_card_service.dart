@@ -62,6 +62,7 @@ class CampusCardService {
   final _logger = AppLogger.instance;
 
   static const String _storageKey = 'cached_campus_card_info';
+  static const String _sessionStorageKey = 'campus_card_session';
   static const String _finServBase = 'https://fin-serv.hunau.edu.cn';
   static const String _cardPayPath = '/cardpay/openCardPay';
   static const String _homePath = '/homeCX/openHomePage';
@@ -100,6 +101,7 @@ class CampusCardService {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_storageKey);
+      await prefs.remove(_sessionStorageKey);
     } catch (_) {
       // 忽略清理失败
     }
@@ -126,22 +128,30 @@ class CampusCardService {
     try {
       return await _refreshOnce();
     } catch (_) {
-      _session = null;
-      _openid = null;
-      await Future.delayed(const Duration(seconds: 2));
+      // 会话可能已被服务端作废：丢掉本地会话后重新授权一次。
+      await _dropSession();
+      await Future.delayed(const Duration(seconds: 1));
       return _refreshOnce();
     }
   }
 
   Future<CampusCardInfo> _refreshOnce() async {
+    // 冷启动时优先恢复上次的 fin-serv 会话，避免每次都重走超星 302 授权
+    // （授权链偶发「资源受限」，是余额同步失败的主要原因）。
+    if (_session == null || _openid == null) {
+      await _restoreSession();
+    }
+
     // 已有会话先直接复用，避免每次刷新都重走超星授权导致服务端限流。
     final existingSession = _session;
     final existingOpenid = _openid;
     if (existingSession != null && existingOpenid != null) {
       final info = await _fetchBalance(existingSession, existingOpenid);
-      if (info != null) return _persist(info);
-      _session = null;
-      _openid = null;
+      if (info != null) {
+        await _persistSession();
+        return _persist(info);
+      }
+      await _dropSession();
     }
 
     final session = _CardSession();
@@ -172,31 +182,24 @@ class CampusCardService {
     if (info == null) {
       throw Exception('校园卡页面暂时无法访问，请稍后重试');
     }
+    await _persistSession();
     return _persist(info);
   }
 
-  /// 请求 openCardPay 并解析余额；页面被重定向或限流时返回 null。
+  /// 请求余额页；openCardPay 失败时按牛×5 的顺序回退到付款码页与首页。
   Future<CampusCardInfo?> _fetchBalance(
     _CardSession session,
     String openid,
   ) async {
-    try {
-      final response = await session.getFollowing(
-        '$_finServBase$_cardPayPath?openid=$openid&displayflag=1&id=28',
-        referer: '$_finServBase$_homePath?openid=$openid&usertype=2',
-      );
-      final status = response.statusCode ?? 0;
-      final html = response.data ?? '';
-      _logger.d(
-        'campus card page: status=$status, length=${html.length}',
-      );
+    final pages = <String>[
+      '$_finServBase$_cardPayPath?openid=$openid&displayflag=1&id=28',
+      '$_finServBase/virtualcard/openVirtualcard?openid=$openid&displayflag=1&id=27',
+      '$_finServBase$_homePath?openid=$openid&usertype=2',
+    ];
 
-      if (status >= 300) return null;
-      if (html.contains('资源受限') ||
-          html.contains('页面丢失') ||
-          html.contains('errorPage')) {
-        return null;
-      }
+    for (final url in pages) {
+      final html = await _getPage(session, url, openid);
+      if (html == null) continue;
 
       final info = _parse(html);
       if (info != null) return info;
@@ -211,13 +214,91 @@ class CampusCardService {
           balance: balance,
         );
       }
+      _logger.d('campus card: no balance in ${Uri.parse(url).path}');
+    }
+    return null;
+  }
+
+  /// GET 页面并跟随 302；落到登录页 / errorPage / 资源受限时返回 null。
+  Future<String?> _getPage(
+    _CardSession session,
+    String url,
+    String openid,
+  ) async {
+    try {
+      final response = await session.getFollowing(
+        url,
+        referer: '$_finServBase$_homePath?openid=$openid&usertype=2',
+      );
+      final status = response.statusCode ?? 0;
+      final html = response.data ?? '';
+      _logger.d(
+        'campus card page: ${Uri.parse(url).path} status=$status length=${html.length}',
+      );
+
+      if (status >= 300) return null;
+      if (_looksLikeLogin(html)) return null;
 
       final head = html.length > 300 ? html.substring(0, 300) : html;
-      _logger.w('campus card parse failed, head: $head');
-      return null;
+      _logger.d('campus card head: $head');
+      return html;
     } catch (e) {
       _logger.w('campus card fetch failed: $e');
       return null;
+    }
+  }
+
+  bool _looksLikeLogin(String html) {
+    if (html.contains('资源受限') ||
+        html.contains('页面丢失') ||
+        html.contains('errorPage')) {
+      return true;
+    }
+    // 未包含 idserial 时，登录页 / 统一身份认证页都视为会话失效
+    if (html.contains('idserial')) return false;
+    return html.contains('cas/login') || html.contains('统一身份认证');
+  }
+
+  Future<void> _persistSession() async {
+    final session = _session;
+    final openid = _openid;
+    if (session == null || openid == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _sessionStorageKey,
+        jsonEncode({'openid': openid, 'cookies': session.toJson()}),
+      );
+    } catch (_) {
+      // 持久化失败不影响本次展示
+    }
+  }
+
+  Future<void> _restoreSession() async {
+    if (_session != null && _openid != null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_sessionStorageKey);
+      if (raw == null || raw.isEmpty) return;
+      final data = jsonDecode(raw);
+      if (data is! Map) return;
+      final cookies = data['cookies'];
+      if (cookies is! List || cookies.isEmpty) return;
+      _session = _CardSession.fromJson(cookies);
+      _openid = data['openid']?.toString();
+    } catch (_) {
+      // 缓存损坏时按无会话处理
+    }
+  }
+
+  Future<void> _dropSession() async {
+    _session = null;
+    _openid = null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_sessionStorageKey);
+    } catch (_) {
+      // 忽略清理失败
     }
   }
 
@@ -510,6 +591,8 @@ class CampusCardService {
 
 /// 单次查询用的会话：手动跟随 302，按域名回放与接收 Cookie。
 class _CardSession {
+  _CardSession();
+
   final Dio _dio = Dio(
     BaseOptions(
       connectTimeout: const Duration(seconds: 15),
@@ -521,6 +604,32 @@ class _CardSession {
   );
 
   final Map<String, Cookie> _cookies = <String, Cookie>{};
+
+  /// 会话 Cookie 序列化，用于跨启动复用 fin-serv 会话。
+  List<Map<String, String>> toJson() => _cookies.values
+      .map((c) => {
+            'name': c.name,
+            'value': c.value,
+            'domain': c.domain ?? '',
+            'path': c.path ?? '/',
+          })
+      .toList();
+
+  factory _CardSession.fromJson(List<dynamic> list) {
+    final session = _CardSession();
+    for (final item in list) {
+      if (item is! Map) continue;
+      final name = item['name']?.toString() ?? '';
+      final value = item['value']?.toString() ?? '';
+      final domain = item['domain']?.toString() ?? '';
+      final path = item['path']?.toString() ?? '/';
+      if (name.isEmpty || domain.isEmpty) continue;
+      session._cookies['$domain|$path|$name'] = Cookie(name, value)
+        ..domain = domain
+        ..path = path;
+    }
+    return session;
+  }
 
   void seed(Uri origin, List<Cookie> cookies) {
     for (final cookie in cookies) {

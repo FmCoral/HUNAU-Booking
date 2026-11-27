@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_tokens.dart';
@@ -31,6 +32,7 @@ class _CampusCardScreenState extends State<CampusCardScreen>
   bool _paying = false;
   String? _error;
   double? _selectedAmount = 10;
+  final _amountController = TextEditingController(text: '10');
 
   @override
   void initState() {
@@ -42,6 +44,7 @@ class _CampusCardScreenState extends State<CampusCardScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _amountController.dispose();
     super.dispose();
   }
 
@@ -95,7 +98,15 @@ class _CampusCardScreenState extends State<CampusCardScreen>
   }
 
   void _selectPreset(double amount) {
+    _amountController.text = amount.toStringAsFixed(0);
     setState(() => _selectedAmount = amount);
+  }
+
+  void _onCustomAmountChanged(String raw) {
+    final value = double.tryParse(raw);
+    setState(() {
+      _selectedAmount = (value != null && value > 0) ? value : null;
+    });
   }
 
   Future<void> _startRecharge(PaymentMethod method) async {
@@ -103,7 +114,11 @@ class _CampusCardScreenState extends State<CampusCardScreen>
 
     final amount = _selectedAmount;
     if (amount == null) {
-      _toast('请选择充值金额');
+      _toast('请输入充值金额');
+      return;
+    }
+    if (amount < 1 || amount > 1000) {
+      _toast('充值金额需在 1–1000 元之间');
       return;
     }
 
@@ -182,6 +197,8 @@ class _CampusCardScreenState extends State<CampusCardScreen>
             ),
             const SizedBox(height: AppSpacing.md),
             _buildPresetGrid(context),
+            const SizedBox(height: AppSpacing.md),
+            _buildCustomAmountField(context),
             const SizedBox(height: AppSpacing.xxl),
           ],
         ),
@@ -309,6 +326,39 @@ class _CampusCardScreenState extends State<CampusCardScreen>
           ),
         );
       },
+    );
+  }
+
+  Widget _buildCustomAmountField(BuildContext context) {
+    final c = context.colors;
+
+    return TextField(
+      controller: _amountController,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'^\d{0,4}(\.\d{0,2})?')),
+      ],
+      onChanged: _onCustomAmountChanged,
+      style: AppText.bodyDense.copyWith(color: c.text),
+      decoration: InputDecoration(
+        hintText: '自定义金额（1–1000）',
+        prefixText: '¥ ',
+        isDense: true,
+        filled: true,
+        fillColor: c.surface,
+        border: OutlineInputBorder(
+          borderRadius: AppRadius.controlAll,
+          borderSide: BorderSide(color: c.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: AppRadius.controlAll,
+          borderSide: BorderSide(color: c.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: AppRadius.controlAll,
+          borderSide: BorderSide(color: c.brand),
+        ),
+      ),
     );
   }
 
