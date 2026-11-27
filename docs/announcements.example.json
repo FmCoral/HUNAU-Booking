@@ -11,26 +11,26 @@
     {
       "id": "20261126-android14-fix",
       "title": "修复 Android 14 登录闪退",
-      "content": "该问题已在 1.1.8 及以上版本修复，建议升级到最新版本。",
+      "content": "该问题已在 1.2.2 及以上版本修复，建议升级到最新版本。",
       "publishedAt": "2026-11-26 18:00",
       "type": "fix",
-      "minVersion": "1.1.8"
+      "minVersion": "1.2.2"
     },
     {
       "id": "20261126-old-version-tip",
       "title": "旧版本兼容提醒",
-      "content": "1.1.6 及更早版本将无法查看宿舍电费，请升级。",
+      "content": "1.2.1 及更早版本将无法查看宿舍电费，请升级。",
       "publishedAt": "2026-11-26 17:00",
       "type": "warning",
-      "maxVersion": "1.1.6"
+      "maxVersion": "1.2.1"
     },
     {
       "id": "20261126-beta-only",
       "title": "内测版本说明",
-      "content": "仅 1.1.7 用户可见。",
+      "content": "仅 1.2.2 用户可见。",
       "publishedAt": "2026-11-26 16:00",
       "type": "notice",
-      "versions": ["1.1.7"]
+      "versions": ["1.2.2"]
     },
     {
       "id": "20261126-feedback",
@@ -40,7 +40,7 @@
       "type": "notice",
       "link": {
         "text": "查看使用说明",
-        "url": "https://book-hunau.fmcoral.com/"
+        "url": "https://book.hunau.fmcoral.com/"
       }
     }
   ]

@@ -56,7 +56,6 @@ HUNAU-Booking/
 │   ├── announcements.example.json  公告示例（可直接改后上传）
 │   ├── CHANGELOG.md                更新日志
 │   ├── release-notes/              各版本更新说明（CI 读取）
-│   ├── 开发方案.md
 │   └── 发布与更新.md
 ├── lib/
 │   ├── core/                       constants / network / services / theme / utils / widgets
@@ -96,7 +95,6 @@ HUNAU-Booking/
 | [更新日志](docs/CHANGELOG.md) | 各版本变更 |
 | [公告规则](docs/announcements.md) | 公告 JSON 字段、版本定向与上传位置 |
 | [发布与更新](docs/发布与更新.md) | R2、version.json、CI 流程 |
-| [开发方案](docs/开发方案.md) | 架构与历史设计记录 |
 
 ## 7. 待办
 
