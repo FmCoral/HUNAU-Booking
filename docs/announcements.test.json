@@ -1,0 +1,39 @@
+{
+  "items": [
+    {
+      "id": "20261127-test-pinned",
+      "title": "公告功能测试（置顶）",
+      "content": "这是一条置顶公告，用于验证列表排序。\n第二行内容用于验证摘要显示。",
+      "publishedAt": "2026-11-27 10:00",
+      "type": "notice",
+      "pinned": true
+    },
+    {
+      "id": "20261127-test-feature",
+      "title": "校园卡充值支持自定义金额",
+      "content": "校园卡与宿舍充值页均可在预设金额下方输入自定义金额。\n校园卡支持 1–1000 元（含两位小数），宿舍仅支持整数。",
+      "publishedAt": "2026-11-27 09:30",
+      "type": "feature",
+      "link": {
+        "text": "查看官网",
+        "url": "https://book.hunau.fmcoral.com/"
+      }
+    },
+    {
+      "id": "20261127-test-fix",
+      "title": "修复切换账号后余额残留",
+      "content": "退出并登录其他账号后，不再显示上一个账号的校园卡姓名与余额。",
+      "publishedAt": "2026-11-27 09:00",
+      "type": "fix",
+      "minVersion": "1.2.2"
+    },
+    {
+      "id": "20261127-test-warning",
+      "title": "仅旧版本可见（不应显示）",
+      "content": "这条公告设置了 maxVersion 1.2.1，当前版本 1.2.2 应该看不到它，用来验证版本过滤。",
+      "publishedAt": "2026-11-27 08:30",
+      "type": "warning",
+      "maxVersion": "1.2.1"
+    }
+  ]
+}
