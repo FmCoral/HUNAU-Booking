@@ -9,102 +9,140 @@ import '../utils/route_utils.dart';
 import '../widgets/update_screen.dart';
 import 'update_installer.dart';
 
+/// 版本检查结果。
+class UpdateInfo {
+  const UpdateInfo({
+    required this.currentVersion,
+    required this.latestVersion,
+    required this.releaseNotes,
+  });
+
+  final String currentVersion;
+  final String latestVersion;
+  final String releaseNotes;
+
+  bool get hasUpdate => _isNewerVersion(latestVersion, currentVersion);
+}
+
+/// 检查更新失败，message 可直接展示给用户。
+class UpdateCheckException implements Exception {
+  const UpdateCheckException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+bool _isNewerVersion(String latest, String current) {
+  final latestParts = latest.split('.').map(int.parse).toList();
+  final currentParts = current.split('.').map(int.parse).toList();
+
+  for (var i = 0; i < latestParts.length && i < currentParts.length; i++) {
+    if (latestParts[i] > currentParts[i]) return true;
+    if (latestParts[i] < currentParts[i]) return false;
+  }
+  return latestParts.length > currentParts.length;
+}
+
 /// 更新检查逻辑与牛×5 一致：
 /// - 自动检查：发现新版本时底部 SnackBar 提示，点击「查看」进入更新页
-/// - 手动检查（来自「关于」页）：有更新直接进入更新页，无更新/失败给出提示
+/// - 手动检查（来自「关于」页）：先进入更新页，由页面自行请求并展示检查结果
 class UpdateService {
   UpdateService._();
 
-  static Future<void> checkUpdate(
-    BuildContext context, {
-    bool showNoUpdate = false,
-  }) async {
+  /// 拉取 version.json；失败时抛出 [UpdateCheckException]。
+  static Future<UpdateInfo> fetchUpdate() async {
+    final packageInfo = await PackageInfo.fromPlatform();
+    final dio = Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 5),
+        receiveTimeout: const Duration(seconds: 5),
+      ),
+    );
     try {
-      final packageInfo = await PackageInfo.fromPlatform();
-      final currentVersion = packageInfo.version;
-
-      final dio = Dio(
-        BaseOptions(
-          connectTimeout: const Duration(seconds: 5),
-          receiveTimeout: const Duration(seconds: 5),
-        ),
+      final response = await dio.get<Object?>(
+        AppConstants.updateVersionUrl,
       );
-      try {
-        final response = await dio.get<Object?>(
-          AppConstants.updateVersionUrl,
-        );
-        if (response.statusCode != 200) {
-          throw Exception('Failed to fetch version information');
-        }
+      if (response.statusCode != 200) {
+        throw const UpdateCheckException('服务器返回异常，请稍后重试');
+      }
 
-        final data = response.data;
-        if (data is! Map) {
-          throw Exception('Invalid version information');
-        }
-        final latestVersion = '${data['version'] ?? ''}'.trim();
-        final releaseNotes = '${data['notes'] ?? ''}'.trim();
-        if (latestVersion.isEmpty) {
-          throw Exception('Invalid version information');
-        }
+      final data = response.data;
+      if (data is! Map) {
+        throw const UpdateCheckException('版本信息格式异常，请稍后重试');
+      }
+      final latestVersion = '${data['version'] ?? ''}'.trim();
+      final releaseNotes = '${data['notes'] ?? ''}'.trim();
+      if (latestVersion.isEmpty) {
+        throw const UpdateCheckException('版本信息格式异常，请稍后重试');
+      }
 
-        if (_isNewerVersion(latestVersion, currentVersion)) {
-          if (!context.mounted) return;
+      return UpdateInfo(
+        currentVersion: packageInfo.version,
+        latestVersion: latestVersion,
+        releaseNotes: releaseNotes,
+      );
+    } on UpdateCheckException {
+      rethrow;
+    } on DioException catch (error) {
+      throw UpdateCheckException(_networkMessage(error));
+    } catch (_) {
+      throw const UpdateCheckException('检查更新失败，请稍后重试');
+    } finally {
+      dio.close(force: true);
+    }
+  }
 
-          if (showNoUpdate) {
-            // 手动检查更新：直接进入更新说明页，不再弹底部提示。
-            Navigator.push(
-              context,
+  /// 启动后自动检查：仅在发现新版本时提示，失败静默。
+  static Future<void> checkUpdate(BuildContext context) async {
+    try {
+      final info = await fetchUpdate();
+      if (!info.hasUpdate || !context.mounted) return;
+
+      final navigator = Navigator.of(context);
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('🚀 发现新版本 v${info.latestVersion}，点击查看详情'),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: '查看',
+            onPressed: () => navigator.push(
               createSlideUpRoute(
                 UpdateScreen(
-                  version: latestVersion,
-                  releaseNotes: releaseNotes,
+                  version: info.latestVersion,
+                  releaseNotes: info.releaseNotes,
                   downloadUrl: AppConstants.updateDownloadUrl,
                 ),
               ),
-            );
-            return;
-          }
-
-          final messenger = ScaffoldMessenger.of(context);
-          messenger.showSnackBar(
-            SnackBar(
-              content: Text('🚀 发现新版本 v$latestVersion，点击查看详情'),
-              behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 5),
-              action: SnackBarAction(
-                label: '查看',
-                onPressed: () => Navigator.push(
-                  context,
-                  createSlideUpRoute(
-                    UpdateScreen(
-                      version: latestVersion,
-                      releaseNotes: releaseNotes,
-                      downloadUrl: AppConstants.updateDownloadUrl,
-                    ),
-                  ),
-                ),
-              ),
             ),
-          );
-          // 无障碍导航（读屏开启/关闭动画）时 SnackBar 不会自动消失，兜底 5 秒后关闭
-          Future<void>.delayed(
-            const Duration(seconds: 5),
-            () => messenger.hideCurrentSnackBar(),
-          );
-        } else if (showNoUpdate && context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('已是最新版本')),
-          );
-        }
-      } finally {
-        dio.close(force: true);
-      }
-    } catch (e) {
-      if (showNoUpdate && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('检查更新失败: $e')),
-        );
-      }
+          ),
+        ),
+      );
+      // 无障碍导航（读屏开启/关闭动画）时 SnackBar 不会自动消失，兜底 5 秒后关闭
+      Future<void>.delayed(
+        const Duration(seconds: 5),
+        () => messenger.hideCurrentSnackBar(),
+      );
+    } catch (_) {
+      // 自动检查失败不打扰用户。
+    }
+  }
+
+  static String _networkMessage(DioException error) {
+    switch (error.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+        return '连接服务器超时，请检查网络后重试';
+      case DioExceptionType.connectionError:
+        return '无法连接服务器，请检查网络后重试';
+      case DioExceptionType.badResponse:
+        return '服务器返回异常（${error.response?.statusCode ?? '未知'}）';
+      default:
+        return '检查更新失败，请检查网络后重试';
     }
   }
 
@@ -167,17 +205,6 @@ class UpdateService {
         },
       ),
     );
-  }
-
-  static bool _isNewerVersion(String latest, String current) {
-    final latestParts = latest.split('.').map(int.parse).toList();
-    final currentParts = current.split('.').map(int.parse).toList();
-
-    for (var i = 0; i < latestParts.length && i < currentParts.length; i++) {
-      if (latestParts[i] > currentParts[i]) return true;
-      if (latestParts[i] < currentParts[i]) return false;
-    }
-    return latestParts.length > currentParts.length;
   }
 }
 

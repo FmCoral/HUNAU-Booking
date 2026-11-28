@@ -3,9 +3,9 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/constants/app_constants.dart';
-import '../../../core/services/update_service.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/utils/route_utils.dart';
+import '../../../core/widgets/update_screen.dart';
 import 'user_agreement_screen.dart';
 
 class AboutScreen extends StatelessWidget {
@@ -90,9 +90,8 @@ class AboutScreen extends StatelessWidget {
                     context,
                     icon: Icons.system_update_rounded,
                     title: '检查更新',
-                    onTap: () => UpdateService.checkUpdate(
-                      context,
-                      showNoUpdate: true,
+                    onTap: () => Navigator.of(context).push(
+                      createSlideHorizontalRoute(const UpdateScreen.check()),
                     ),
                   ),
                   Divider(height: 1, indent: 56, color: c.border),

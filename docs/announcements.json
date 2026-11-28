@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "id": "20261127-update",
+      "title": "正式版发布",
+      "content": "Welcome to Book for HUNAU. \nIf you have any good ideas, please share them with us via Help & Feedback or email us at cmail@fmcoral.com. ",
+      "publishedAt": "2026-11-27 12:00",
+      "type": "feature",
+      "pinned": true,
+      "link": {
+        "text": "查看详情",
+        "url": "https://book.hunau.fmcoral.com/"
+      }
+    }
+  ]
+}
