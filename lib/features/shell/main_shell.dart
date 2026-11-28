@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/glass/glass.dart';
 import '../../core/services/update_service.dart';
-import '../../core/theme/app_tokens.dart';
 import '../profile/profile_screen.dart';
 import '../timetable/screens/timetable_screen.dart';
 
@@ -36,36 +36,28 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
     return Scaffold(
+      // 让页面内容延伸到悬浮玻璃底栏下方，玻璃才有东西可模糊。
+      extendBody: true,
       body: IndexedStack(
         index: _index,
         children: const [TimetableScreen(), ProfileScreen()],
       ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: c.surface,
-          border: Border(top: BorderSide(color: c.border)),
-        ),
-        child: SafeArea(
-          top: false,
-          child: BottomNavigationBar(
-            currentIndex: _index,
-            onTap: (index) => setState(() => _index = index),
-            items: const [
-              BottomNavigationBarItem(
-                icon: Icon(Icons.calendar_month_outlined),
-                activeIcon: Icon(Icons.calendar_month),
-                label: '课表',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.person_outline),
-                activeIcon: Icon(Icons.person),
-                label: '我',
-              ),
-            ],
+      bottomNavigationBar: GlassBottomNav(
+        currentIndex: _index,
+        onTap: (index) => setState(() => _index = index),
+        items: const [
+          GlassNavItem(
+            icon: Icons.calendar_month_outlined,
+            activeIcon: Icons.calendar_month,
+            label: '课表',
           ),
-        ),
+          GlassNavItem(
+            icon: Icons.person_outline,
+            activeIcon: Icons.person,
+            label: '我',
+          ),
+        ],
       ),
     );
   }

@@ -3,6 +3,7 @@ import '../models/course_model.dart';
 import '../utils/date_calculator.dart';
 import '../utils/week_parser.dart';
 import '../utils/course_color_utils.dart';
+import '../../../core/glass/glass_bottom_nav.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/utils/l10n_extension.dart';
 
@@ -165,6 +166,11 @@ class WeeklyCalendarViewState extends State<WeeklyCalendarView> {
               Expanded(
                 child: SingleChildScrollView(
                   scrollDirection: Axis.vertical,
+                  // 预留悬浮玻璃底栏的高度，避免最后两节课被遮住。
+                  padding: EdgeInsets.only(
+                    bottom: MediaQuery.paddingOf(context).bottom +
+                        GlassBottomNav.contentInset,
+                  ),
                   child: Container(
                     color: context.colors.bg,
                     child: SizedBox(

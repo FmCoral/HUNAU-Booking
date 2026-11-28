@@ -1,0 +1,138 @@
+/*
+ * Copyright (c) 2026
+ *
+ * This file is derived from AndroidLiquidGlass (Backdrop):
+ * https://github.com/Kyant0/AndroidLiquidGlass
+ * Copyright (c) Kyant0 and contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/*
+ * WARNING: Library source copy
+ * 库源码副本
+ *
+ * This file is a copy of the backdrop library (io.github.kyant0:backdrop:2.0.0) source,
+ * sharing the same package name (com.kyant.backdrop.effects / com.kyant.backdrop.backdrops).
+ * - If you depend on the backdrop library via Maven: DELETE this directory.
+ *   The component code directly uses the library's identical public APIs, and keeping
+ *   this copy would cause duplicate declaration conflicts with the library.
+ * - Keep this directory only if you fork the library source (no Maven dependency).
+ */
+package com.kyant.backdrop.backdrops
+
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.GraphicsLayerScope
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.unit.Density
+import com.kyant.backdrop.Backdrop
+
+/**
+ * 组合背景源
+ *
+ * 将多个背景源组合在一起，按顺序绘制。
+ * 适合需要混合多种背景的场景。
+ */
+
+@Composable
+fun rememberCombinedBackdrop(
+    backdrop1: Backdrop,
+    backdrop2: Backdrop
+): Backdrop {
+    return remember(backdrop1, backdrop2) {
+        Combined2Backdrops(backdrop1, backdrop2)
+    }
+}
+
+@Composable
+fun rememberCombinedBackdrop(
+    backdrop1: Backdrop,
+    backdrop2: Backdrop,
+    backdrop3: Backdrop
+): Backdrop {
+    return remember(backdrop1, backdrop2, backdrop3) {
+        Combined3Backdrops(backdrop1, backdrop2, backdrop3)
+    }
+}
+
+@Composable
+fun rememberCombinedBackdrop(vararg backdrops: Backdrop): Backdrop {
+    return remember(*backdrops) {
+        CombinedBackdrops(*backdrops)
+    }
+}
+
+@Immutable
+private class Combined2Backdrops(
+    val backdrop1: Backdrop,
+    val backdrop2: Backdrop
+) : Backdrop {
+
+    override val isCoordinatesDependent: Boolean =
+        backdrop1.isCoordinatesDependent || backdrop2.isCoordinatesDependent
+
+    override fun DrawScope.drawBackdrop(
+        density: Density,
+        coordinates: LayoutCoordinates?,
+        layerBlock: (GraphicsLayerScope.() -> Unit)?
+    ) {
+        with(backdrop1) { drawBackdrop(density, coordinates, layerBlock) }
+        with(backdrop2) { drawBackdrop(density, coordinates, layerBlock) }
+    }
+}
+
+@Immutable
+private class Combined3Backdrops(
+    val backdrop1: Backdrop,
+    val backdrop2: Backdrop,
+    val backdrop3: Backdrop
+) : Backdrop {
+
+    override val isCoordinatesDependent: Boolean =
+        backdrop1.isCoordinatesDependent ||
+                backdrop2.isCoordinatesDependent ||
+                backdrop3.isCoordinatesDependent
+
+    override fun DrawScope.drawBackdrop(
+        density: Density,
+        coordinates: LayoutCoordinates?,
+        layerBlock: (GraphicsLayerScope.() -> Unit)?
+    ) {
+        with(backdrop1) { drawBackdrop(density, coordinates, layerBlock) }
+        with(backdrop2) { drawBackdrop(density, coordinates, layerBlock) }
+        with(backdrop3) { drawBackdrop(density, coordinates, layerBlock) }
+    }
+}
+
+@Immutable
+private class CombinedBackdrops(
+    vararg val backdrops: Backdrop
+) : Backdrop {
+
+    override val isCoordinatesDependent: Boolean =
+        backdrops.any { it.isCoordinatesDependent }
+
+    override fun DrawScope.drawBackdrop(
+        density: Density,
+        coordinates: LayoutCoordinates?,
+        layerBlock: (GraphicsLayerScope.() -> Unit)?
+    ) {
+        backdrops.forEach { backdrop ->
+            with(backdrop) { drawBackdrop(density, coordinates, layerBlock) }
+        }
+    }
+}

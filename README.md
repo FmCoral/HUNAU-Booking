@@ -2,7 +2,7 @@
 
 > 湖南农业大学校园工具：用「智慧湘农」账号登录，课表、校园卡余额与充值、宿舍电费、软件公告一屏直达。
 
-当前版本：**1.2.3**（`versionCode 26`，arm64）
+当前版本：**1.2.4**（`versionCode 27`，arm64）
 
 ## 1. 项目概览
 
@@ -58,7 +58,7 @@ HUNAU-Booking/
 │   ├── release-notes/              各版本更新说明（CI 读取）
 │   └── 发布与更新.md
 ├── lib/
-│   ├── core/                       constants / network / services / theme / utils / widgets
+│   ├── core/                       constants / glass / network / services / theme / utils / widgets
 │   └── features/
 │       ├── auth/                   登录与登录态
 │       ├── shell/                  底部导航壳
@@ -95,6 +95,8 @@ HUNAU-Booking/
 | [更新日志](docs/CHANGELOG.md) | 各版本变更 |
 | [公告规则](docs/announcements.md) | 公告 JSON 字段、版本定向与上传位置 |
 | [发布与更新](docs/发布与更新.md) | R2、version.json、CI 流程 |
+| [技能与参考库](docs/skills/README.md) | 外部 Skill 备份，如液态玻璃（Compose）实现参考 |
+| [液态玻璃 Skill](.trae/skills/liquid-glass/SKILL.md) | 项目内液态玻璃组件用法，实现在 `lib/core/glass/` |
 
 ## 7. 待办
 
